@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { WalletBar } from './WalletBar';
+import { PendingTxsIndicator } from './PendingTxsIndicator';
 
 export function Navbar() {
   return (
@@ -31,8 +32,9 @@ export function Navbar() {
           </div>
         </Link>
 
-        {/* Wallet */}
-        <div className="shrink-0">
+        {/* Pending transactions indicator + Wallet */}
+        <div className="flex items-center gap-3 shrink-0">
+          <PendingTxsIndicator />
           <WalletBar />
         </div>
       </div>

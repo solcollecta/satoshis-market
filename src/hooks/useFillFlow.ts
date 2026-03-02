@@ -6,15 +6,21 @@
  * Phases:
  *   idle → simulating → pending → confirmed | failed
  *
+ * Architecture — per-txid isolated polling:
+ *   Each submitted txid gets its own entry in `txPollsRef` (Map<txid, FillPollEntry>).
+ *   `stopTxIntervals(txid)` clears intervals but keeps the entry so the failed-state
+ *   `checkStatus` can still operate. `clearTxPoll(txid)` fully removes on success / reset.
+ *
  * Confirmation detection (in order):
  *   1. checkTxConfirmed(txid) — btc_getTransactionReceipt (fast when supported)
  *   2. getOffer(offerId).status === 2 — on-chain offer status fallback
  *
- * Times out after FILL_TIMEOUT_S seconds.
+ * Times out after FILL_TIMEOUT_S (30 minutes).
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { checkTxConfirmed, getOffer } from '@/lib/opnet';
+import { addPendingTx, removePendingTx } from '@/lib/pendingTxs';
 
 export type FillPhase = 'idle' | 'simulating' | 'pending' | 'confirmed' | 'failed';
 
@@ -27,7 +33,14 @@ export interface FillFlowState {
 }
 
 const POLL_MS = 5_000;
-const FILL_TIMEOUT_S = 300; // 5 minutes
+const FILL_TIMEOUT_S = 1800; // 30 minutes
+
+/** Per-transaction polling state for the fill flow. */
+interface FillPollEntry {
+  pollId: ReturnType<typeof setInterval> | null;
+  tickId: ReturnType<typeof setInterval> | null;
+  startTs: number;
+}
 
 export function useFillFlow(offerId: bigint) {
   const [state, setState] = useState<FillFlowState>({
@@ -37,82 +50,172 @@ export function useFillFlow(offerId: bigint) {
     elapsed: 0,
   });
 
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const startTsRef = useRef(0);
-  const currentTxidRef = useRef('');
-  // Store offerId in ref so the poll closure always sees the latest value
+  /** Per-txid polling map — each submitted fill tx has its own isolated entry. */
+  const txPollsRef  = useRef<Map<string, FillPollEntry>>(new Map());
+  const activeTxidRef = useRef<string | null>(null);
+
+  // Keep offerId current inside poll closures without causing re-registration.
   const offerIdRef = useRef<bigint>(offerId);
   useEffect(() => { offerIdRef.current = offerId; }, [offerId]);
 
-  const clearTimers = useCallback(() => {
-    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-    if (tickRef.current) { clearInterval(tickRef.current); tickRef.current = null; }
+  // ── Interval helpers ────────────────────────────────────────────────────
+
+  /** Stop intervals but keep entry (for failed-state recovery). */
+  const stopTxIntervals = useCallback((txid: string) => {
+    const entry = txPollsRef.current.get(txid);
+    if (!entry) return;
+    if (entry.pollId !== null) { clearInterval(entry.pollId); entry.pollId = null; }
+    if (entry.tickId !== null) { clearInterval(entry.tickId); entry.tickId = null; }
   }, []);
 
-  const startCountdown = useCallback(() => {
-    startTsRef.current = Date.now();
-    if (tickRef.current) clearInterval(tickRef.current);
-    tickRef.current = setInterval(() => {
-      setState(s => ({ ...s, elapsed: Math.floor((Date.now() - startTsRef.current) / 1000) }));
-    }, 1000);
+  /** Stop intervals AND remove entry (success / reset). */
+  const clearTxPoll = useCallback((txid: string) => {
+    stopTxIntervals(txid);
+    txPollsRef.current.delete(txid);
+  }, [stopTxIntervals]);
+
+  /** Clear every tracked poll — called on unmount. */
+  const clearAllPolls = useCallback(() => {
+    for (const entry of txPollsRef.current.values()) {
+      if (entry.pollId !== null) clearInterval(entry.pollId);
+      if (entry.tickId !== null) clearInterval(entry.tickId);
+    }
+    txPollsRef.current.clear();
   }, []);
 
-  useEffect(() => () => clearTimers(), [clearTimers]);
+  useEffect(() => () => clearAllPolls(), [clearAllPolls]);
 
   // ── Actions ──────────────────────────────────────────────────────────────
 
   const setSimulating = useCallback(() => {
-    clearTimers();
+    if (activeTxidRef.current) stopTxIntervals(activeTxidRef.current);
     setState({ phase: 'simulating', txid: null, error: null, elapsed: 0 });
-  }, [clearTimers]);
+  }, [stopTxIntervals]);
 
   const setFailed = useCallback((err: string) => {
-    clearTimers();
+    // Stop polling but keep entry so checkStatus can still use activeTxidRef.
+    if (activeTxidRef.current) stopTxIntervals(activeTxidRef.current);
     setState(s => ({ ...s, phase: 'failed', error: err }));
-  }, [clearTimers]);
+  }, [stopTxIntervals]);
 
   const setPending = useCallback((txid: string) => {
-    clearTimers();
-    currentTxidRef.current = txid;
+    // Discard any previous fill poll.
+    if (activeTxidRef.current && activeTxidRef.current !== txid) {
+      clearTxPoll(activeTxidRef.current);
+    }
+    activeTxidRef.current = txid;
+
+    addPendingTx({ type: 'fill', txid, offerId: offerIdRef.current.toString() });
     setState({ phase: 'pending', txid, error: null, elapsed: 0 });
-    startCountdown();
 
-    pollRef.current = setInterval(async () => {
-      const elapsedS = Math.floor((Date.now() - startTsRef.current) / 1000);
+    const entry: FillPollEntry = {
+      pollId: null,
+      tickId: null,
+      startTs: Date.now(),
+    };
+    txPollsRef.current.set(txid, entry);
+
+    // Tick: update elapsed every second.
+    entry.tickId = setInterval(() => {
+      const e = txPollsRef.current.get(txid);
+      if (!e || e.tickId === null) return;
+      setState(s => {
+        if (s.txid !== txid) return s;
+        return { ...s, elapsed: Math.floor((Date.now() - e.startTs) / 1000) };
+      });
+    }, 1000);
+
+    // Poll: check receipt then offer status.
+    entry.pollId = setInterval(async () => {
+      const e = txPollsRef.current.get(txid);
+      if (!e || e.pollId === null) return;
+
+      const elapsedS = Math.floor((Date.now() - e.startTs) / 1000);
+
       if (elapsedS >= FILL_TIMEOUT_S) {
-        clearTimers();
-        setState(s => ({
-          ...s,
-          phase: 'failed',
-          error: `Timed out after ${FILL_TIMEOUT_S}s. Check the explorer for txid: ${currentTxidRef.current}`,
-        }));
+        clearTxPoll(txid);
+        if (activeTxidRef.current === txid) activeTxidRef.current = null;
+        setState(s => {
+          if (s.txid !== txid) return s;
+          return {
+            ...s,
+            phase: 'failed',
+            error: `Still waiting after 30 minutes. Your transaction may still confirm — check the explorer for txid: ${txid}`,
+          };
+        });
         return;
       }
 
-      // Fast path: receipt-based confirmation
-      const receiptOk = await checkTxConfirmed(currentTxidRef.current);
+      // Fast path: receipt-based confirmation.
+      const receiptOk = await checkTxConfirmed(txid);
+      if (!txPollsRef.current.get(txid)?.pollId) return;
+
       if (receiptOk) {
-        clearTimers();
-        setState(s => ({ ...s, phase: 'confirmed' }));
+        clearTxPoll(txid);
+        if (activeTxidRef.current === txid) activeTxidRef.current = null;
+        removePendingTx(txid);
+        setState(s => {
+          if (s.txid !== txid) return s;
+          return { ...s, phase: 'confirmed' };
+        });
         return;
       }
 
-      // Fallback: poll offer status (status 2 = Filled)
+      // Fallback: poll offer status (status 2 = Filled).
       try {
         const offer = await getOffer(offerIdRef.current);
+        if (!txPollsRef.current.get(txid)?.pollId) return;
         if (offer !== null && offer.status === 2) {
-          clearTimers();
-          setState(s => ({ ...s, phase: 'confirmed' }));
+          clearTxPoll(txid);
+          if (activeTxidRef.current === txid) activeTxidRef.current = null;
+          removePendingTx(txid);
+          setState(s => {
+            if (s.txid !== txid) return s;
+            return { ...s, phase: 'confirmed' };
+          });
         }
       } catch { /* still pending — keep polling */ }
     }, POLL_MS);
-  }, [clearTimers, startCountdown]);
+  }, [clearTxPoll]);
+
+  /**
+   * One-shot manual status check — safe to call from the failed state.
+   * Checks receipt first, then offer status. Advances to confirmed if either passes.
+   */
+  const checkStatus = useCallback(async () => {
+    const txid = activeTxidRef.current;
+    if (!txid) return;
+
+    const receiptOk = await checkTxConfirmed(txid).catch(() => false);
+    if (receiptOk) {
+      removePendingTx(txid);
+      setState(s => {
+        if (s.txid !== txid) return s;
+        return { ...s, phase: 'confirmed' };
+      });
+      return;
+    }
+
+    try {
+      const offer = await getOffer(offerIdRef.current);
+      if (offer !== null && offer.status === 2) {
+        removePendingTx(txid);
+        setState(s => {
+          if (s.txid !== txid) return s;
+          return { ...s, phase: 'confirmed' };
+        });
+      }
+    } catch { /* still not confirmed */ }
+  }, []);
 
   const reset = useCallback(() => {
-    clearTimers();
+    if (activeTxidRef.current) {
+      clearTxPoll(activeTxidRef.current);
+      removePendingTx(activeTxidRef.current);
+      activeTxidRef.current = null;
+    }
     setState({ phase: 'idle', txid: null, error: null, elapsed: 0 });
-  }, [clearTimers]);
+  }, [clearTxPoll]);
 
-  return { state, setSimulating, setPending, setFailed, reset };
+  return { state, setSimulating, setPending, setFailed, checkStatus, reset };
 }

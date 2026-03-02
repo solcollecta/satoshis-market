@@ -21,6 +21,7 @@ interface Props {
   state: FillFlowState;
   onFill: () => void;
   onReset: () => void;
+  onCheckStatus: () => void;
   /** Disable the Fill button (e.g. OTC restriction) */
   disabled?: boolean;
   /** Label for the primary action button in idle state */
@@ -79,6 +80,7 @@ export function FillProgress({
   state,
   onFill,
   onReset,
+  onCheckStatus,
   disabled = false,
   fillLabel = 'Fill Offer',
   btcBalanceSats,
@@ -161,7 +163,7 @@ export function FillProgress({
           )}
           <p className="text-xs text-slate-500">
             {elapsed > 0 ? `${elapsed}s elapsed · ` : ''}
-            Checking every 5 seconds.
+            Checking every 5 seconds. This can take a few minutes — please be patient.
           </p>
         </>
       )}
@@ -181,22 +183,22 @@ export function FillProgress({
         </>
       )}
 
-      {/* failed */}
+      {/* failed / timed-out */}
       {phase === 'failed' && (
         <>
-          <p className="text-sm text-red-400 break-words">{error}</p>
-          <div className="flex items-center gap-3">
-            <button type="button" onClick={onFill} className="btn-primary text-sm">
-              Retry
-            </button>
-            <button
-              type="button"
-              onClick={onReset}
-              className="text-xs text-slate-500 hover:text-white underline underline-offset-2"
-            >
-              Reset
-            </button>
-          </div>
+          <p className="text-sm text-amber-400 break-words">{error}</p>
+          {txid && (
+            <div className="bg-surface rounded-lg px-3 py-2 border border-surface-border">
+              <p className="text-xs text-slate-400 font-medium mb-0.5">Transaction</p>
+              <TxRow txid={txid} />
+            </div>
+          )}
+          <p className="text-xs text-slate-500">
+            If your wallet shows the transaction as confirmed, click below to check on-chain status.
+          </p>
+          <button type="button" onClick={onCheckStatus} className="btn-secondary text-sm w-full">
+            Check Status Again
+          </button>
         </>
       )}
 

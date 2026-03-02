@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useWallet } from '@/context/WalletContext';
 import {
@@ -15,14 +15,15 @@ import {
   hexToBigint,
   fetchTokenInfo,
   fetchAllowance,
+  resolveTweakedPubkey,
   type NftEntry,
 } from '@/lib/opnet';
 import { parseUnits, parseBtcToSats, formatUnits, saveListingTimestamp, type CachedToken } from '@/lib/tokens';
-import { getConnectedAddress } from '@/lib/wallet';
 import { NftPicker } from '@/components/NftPicker';
 import { TokenPicker } from '@/components/TokenPicker';
 import { TxProgress } from '@/components/TxProgress';
 import { useTxFlow } from '@/hooks/useTxFlow';
+import { saveCreateDraft, loadCreateDraft, clearCreateDraft } from '@/lib/createDraft';
 
 type Mode = 'op20' | 'op721';
 
@@ -33,6 +34,7 @@ export default function CreateOfferPage() {
   const router = useRouter();
   const { address, connect, provider } = useWallet();
   const flow = useTxFlow();
+  const resumedRef = useRef(false);
 
   // ── Form state ────────────────────────────────────────────────────────────
   const [mode, setMode] = useState<Mode>('op20');
@@ -40,7 +42,13 @@ export default function CreateOfferPage() {
   const [tokenAmountHuman, setTokenAmountHuman] = useState('');
   const [tokenId, setTokenId] = useState('');
   const [btcValue, setBtcValue] = useState('');
+  /** Human-readable P2TR address shown in the input (opt1p… / bc1p… / tb1p…) */
+  const [payoutAddress, setPayoutAddress] = useState('');
+  /** Resolved tweaked pubkey (0x hex) — derived from payoutAddress, never shown to user */
   const [makerRecipientKey, setMakerRecipientKey] = useState('');
+  const [payoutResolving, setPayoutResolving] = useState(false);
+  const [payoutResolved, setPayoutResolved] = useState(false);
+  const [payoutResolveError, setPayoutResolveError] = useState<string | null>(null);
   const [allowedTaker, setAllowedTaker] = useState('');
 
   // ── Token metadata ────────────────────────────────────────────────────────
@@ -91,6 +99,86 @@ export default function CreateOfferPage() {
     return () => clearTimeout(t);
   }, [tokenAddress, mode]);
 
+  // ── Resolve payout address → tweaked pubkey ──────────────────────────────
+  // Connected wallet: skip RPC — key is embedded in the bech32m address (signer path).
+  // External address: call getPublicKeysInfoRaw with a 600ms debounce.
+  useEffect(() => {
+    const addr = payoutAddress.trim();
+
+    if (!addr) {
+      setMakerRecipientKey('');
+      setPayoutResolved(false);
+      setPayoutResolveError(null);
+      return;
+    }
+
+    // Format check: must be a P2TR bech32m (witness v1). bc1q/tb1q are P2WPKH (v0).
+    const quickKey = p2trAddressToKeyHex(addr);
+    if (quickKey === null) {
+      setMakerRecipientKey('');
+      setPayoutResolved(false);
+      setPayoutResolveError('Must be a P2TR address: opt1p…, bc1p…, or tb1p…');
+      return;
+    }
+
+    setPayoutResolveError(null);
+
+    // Connected wallet — use the key encoded in the address directly (no RPC needed)
+    if (address && addr === address.trim()) {
+      setMakerRecipientKey(quickKey);
+      setPayoutResolved(true);
+      return;
+    }
+
+    // External address — resolve via RPC with debounce
+    setPayoutResolving(true);
+    setPayoutResolved(false);
+    const t = setTimeout(async () => {
+      try {
+        const key = await resolveTweakedPubkey(addr);
+        setMakerRecipientKey(key ?? quickKey); // fall back to manual decode if RPC has no record
+        setPayoutResolved(true);
+      } catch {
+        setMakerRecipientKey(quickKey);
+        setPayoutResolved(true);
+      } finally {
+        setPayoutResolving(false);
+      }
+    }, 600);
+    return () => clearTimeout(t);
+  }, [payoutAddress, address]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Resume draft on mount (once) ─────────────────────────────────────────
+  useEffect(() => {
+    if (resumedRef.current) return;
+    resumedRef.current = true;
+    const draft = loadCreateDraft();
+    if (!draft) return;
+    // Restore form state
+    setMode(draft.mode);
+    setTokenAddress(draft.tokenAddress);
+    setTokenAmountHuman(draft.tokenAmountHuman);
+    setTokenId(draft.tokenId);
+    setBtcValue(draft.btcValue);
+    // Restore payout address for display; set the resolved key directly to skip RPC
+    setPayoutAddress(draft.payoutAddress ?? draft.makerRecipientKey);
+    setMakerRecipientKey(draft.makerRecipientKey);
+    setPayoutResolved(!!draft.makerRecipientKey);
+    setAllowedTaker(draft.allowedTaker);
+    setTokenDecimals(draft.tokenDecimals);
+    // Resume flow — no confirmFn on resume (receipt-only is fine; tx likely already confirmed)
+    if (draft.phase === 'approve_pending') {
+      flow.setApprovePending(draft.approveTxid);
+    } else if (draft.phase === 'create_pending' && draft.createTxid && draft.predictedOfferId) {
+      flow.setCreatePending(draft.createTxid, BigInt(draft.predictedOfferId));
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Clear draft when offer is confirmed ───────────────────────────────────
+  useEffect(() => {
+    if (flow.state.phase === 'create_confirmed') clearCreateDraft();
+  }, [flow.state.phase]);
+
   // ── Auto-redirect when offer confirmed (also save timestamp) ─────────────
   useEffect(() => {
     if (flow.state.phase === 'create_confirmed' && flow.state.offerId != null) {
@@ -109,7 +197,9 @@ export default function CreateOfferPage() {
     if (mode === 'op20' && tokenAmountRaw === 0n) return 'Token amount is required';
     if (mode === 'op721' && !tokenId) return 'Token ID is required';
     if (btcSatsRaw === 0n) return 'BTC price is required';
-    if (!makerRecipientKey) return 'Maker recipient key is required';
+    if (!payoutAddress) return 'Payout BTC address is required';
+    if (!makerRecipientKey || payoutResolving) return 'Payout address is still resolving — please wait a moment';
+    if (payoutResolveError) return payoutResolveError;
     if (allowedTaker) {
       try {
         normalizeToHex32(allowedTaker);
@@ -142,20 +232,10 @@ export default function CreateOfferPage() {
     ];
   };
 
-  // ── Auto-fill BTC recipient key from wallet ───────────────────────────────
-  const handleFillKeyFromWallet = async () => {
-    setError(null);
-    const addr = await getConnectedAddress();
-    if (!addr) { setError('Connect your wallet first.'); return; }
-    const key = p2trAddressToKeyHex(addr);
-    if (!key) {
-      setError(
-        `Could not decode a P2TR key from "${addr}". ` +
-        'Enter the 32-byte tweaked pubkey hex manually.',
-      );
-      return;
-    }
-    setMakerRecipientKey(key);
+  // ── Fill payout address from connected wallet (skips RPC — signer path) ──
+  const handleUseConnectedWallet = () => {
+    if (!address) { void connect(); return; }
+    setPayoutAddress(address); // resolve effect detects this === connected wallet → no RPC
   };
 
   // ── NFT picker ────────────────────────────────────────────────────────────
@@ -214,6 +294,14 @@ export default function CreateOfferPage() {
         : undefined; // OP-721: receipt-only fallback with auto-advance
 
       flow.setApprovePending(tx.transactionId, confirmFn);
+      saveCreateDraft({
+        mode, tokenAddress, tokenAmountHuman, tokenId, btcValue,
+        payoutAddress, makerRecipientKey, allowedTaker, tokenDecimals,
+        phase: 'approve_pending',
+        approveTxid: tx.transactionId,
+        createTxid: null,
+        predictedOfferId: null,
+      });
     } catch (e) {
       flow.setApproveFailed(e instanceof Error ? e.message : 'Approval failed');
     }
@@ -256,6 +344,14 @@ export default function CreateOfferPage() {
         network: OP_NETWORK,
       });
       flow.setCreatePending(tx.transactionId, predictedOfferId);
+      saveCreateDraft({
+        mode, tokenAddress, tokenAmountHuman, tokenId, btcValue,
+        payoutAddress, makerRecipientKey, allowedTaker, tokenDecimals,
+        phase: 'create_pending',
+        approveTxid: flow.state.approveTxid ?? '',
+        createTxid: tx.transactionId,
+        predictedOfferId: predictedOfferId.toString(),
+      });
     } catch (e) {
       flow.setCreateFailed(e instanceof Error ? e.message : 'Transaction failed');
     }
@@ -291,25 +387,36 @@ export default function CreateOfferPage() {
         </div>
 
         {/* Mode selector */}
-        <div className="card">
-          <p className="text-xs text-slate-400 mb-3">Offer type</p>
-          <div className="flex gap-2">
-            {(['op20', 'op721'] as Mode[]).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => { setMode(m); flow.reset(); }}
-                className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors border ${
-                  mode === m
-                    ? 'bg-brand border-brand text-white'
-                    : 'border-surface-border text-slate-400 hover:text-white'
-                }`}
-              >
-                {m === 'op20' ? 'OP-20 Token' : 'OP-721 NFT'}
-              </button>
-            ))}
-          </div>
-        </div>
+        {(() => {
+          const isModeChangeable = ['idle', 'approve_failed', 'create_failed'].includes(flow.state.phase);
+          return (
+            <div className="card">
+              <p className="text-xs text-slate-400 mb-3">Offer type</p>
+              <div className="flex gap-2">
+                {(['op20', 'op721'] as Mode[]).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => { if (!isModeChangeable) return; setMode(m); flow.reset(); }}
+                    disabled={!isModeChangeable}
+                    className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors border ${
+                      mode === m
+                        ? 'bg-brand border-brand text-white'
+                        : 'border-surface-border text-slate-400 hover:text-white'
+                    }${!isModeChangeable ? ' opacity-40 cursor-not-allowed' : ''}`}
+                  >
+                    {m === 'op20' ? 'OP-20 Token' : 'OP-721 NFT'}
+                  </button>
+                ))}
+              </div>
+              {!isModeChangeable && (
+                <p className="text-xs text-amber-500/80 mt-2">
+                  Mode locked while a transaction is in progress. Reset the flow to switch.
+                </p>
+              )}
+            </div>
+          );
+        })()}
 
         <form onSubmit={(e) => e.preventDefault()} className="card space-y-5">
           {/* Token address */}
@@ -440,29 +547,47 @@ export default function CreateOfferPage() {
             )}
           </div>
 
-          {/* Maker recipient key */}
+          {/* Payout BTC address */}
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label htmlFor="maker-key" className="mb-0">
+              <label htmlFor="payout-addr" className="mb-0">
                 Payout BTC address
               </label>
-              <button
-                type="button"
-                onClick={() => void handleFillKeyFromWallet()}
-                className="text-xs text-brand hover:underline shrink-0 ml-2"
-              >
-                Use connected wallet
-              </button>
+              {address && (
+                <button
+                  type="button"
+                  onClick={handleUseConnectedWallet}
+                  className="text-xs text-brand hover:underline shrink-0 ml-2"
+                >
+                  Use connected wallet
+                </button>
+              )}
             </div>
-            <input
-              id="maker-key"
-              type="text"
-              placeholder="0x… (64 hex chars)"
-              value={makerRecipientKey}
-              onChange={(e) => setMakerRecipientKey(e.target.value)}
-              className="font-mono text-xs"
-              required
-            />
+            <div className="relative">
+              <input
+                id="payout-addr"
+                type="text"
+                placeholder="opt1p… / bc1p… / tb1p…"
+                value={payoutAddress}
+                onChange={(e) => setPayoutAddress(e.target.value)}
+                className={`pr-8 ${payoutResolveError ? 'border-red-700/70' : payoutResolved ? 'border-emerald-700/50' : ''}`}
+                required
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                {payoutResolving && (
+                  <span className="text-slate-500 text-xs animate-pulse">…</span>
+                )}
+                {!payoutResolving && payoutResolved && (
+                  <span className="text-emerald-400 text-xs">✓</span>
+                )}
+              </span>
+            </div>
+            {payoutResolveError && (
+              <p className="text-xs text-red-400 mt-1">{payoutResolveError}</p>
+            )}
+            <p className="text-xs text-slate-600 mt-1">
+              Where you receive BTC when the offer is filled.
+            </p>
           </div>
 
           {/* Platform fee — fixed, not user-configurable */}
@@ -507,8 +632,10 @@ export default function CreateOfferPage() {
             mode={mode}
             onApprove={handleApprove}
             onCreate={handleCreate}
-            onReset={flow.reset}
+            onReset={() => { clearCreateDraft(); flow.reset(); }}
             onSkipApprove={flow.forceApproveConfirmed}
+            onCheckApproveStatus={() => void flow.checkApproveStatus()}
+            onCheckCreateStatus={() => void flow.checkCreateStatus()}
           />
 
           {/* Debug info */}

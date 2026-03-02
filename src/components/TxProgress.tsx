@@ -24,6 +24,8 @@ interface Props {
   onCreate: () => void;
   onReset: () => void;
   onSkipApprove: () => void;
+  onCheckApproveStatus: () => void;
+  onCheckCreateStatus: () => void;
 }
 
 type StepStatus = 'waiting' | 'active' | 'done' | 'error';
@@ -101,7 +103,7 @@ function TxidRow({ txid }: { txid: string }) {
   );
 }
 
-export function TxProgress({ state, mode, onApprove, onCreate, onReset, onSkipApprove }: Props) {
+export function TxProgress({ state, mode, onApprove, onCreate, onReset, onSkipApprove, onCheckApproveStatus, onCheckCreateStatus }: Props) {
   const { phase, approveTxid, createTxid, offerId, error, elapsed } = state;
 
   const approveStatus = (): StepStatus => {
@@ -166,7 +168,7 @@ export function TxProgress({ state, mode, onApprove, onCreate, onReset, onSkipAp
             {approveTxid && <TxidRow txid={approveTxid} />}
             <p className="text-xs text-slate-500">
               {elapsed > 0 ? `${elapsed}s elapsed · ` : ''}
-              This may take a few minutes.
+              Checking every 5 seconds. This can take a few minutes — please be patient.
             </p>
           </>
         )}
@@ -174,15 +176,14 @@ export function TxProgress({ state, mode, onApprove, onCreate, onReset, onSkipAp
         {/* approve failed */}
         {phase === 'approve_failed' && (
           <>
-            <p className="text-sm text-red-400 break-words">{error}</p>
-            <div className="flex items-center gap-3">
-              <button type="button" onClick={onApprove} className="btn-secondary text-sm">
-                Retry approval
-              </button>
-              <button type="button" onClick={onReset} className="text-xs text-slate-500 hover:text-white underline underline-offset-2">
-                Reset
-              </button>
-            </div>
+            <p className="text-sm text-amber-400 break-words">{error}</p>
+            {approveTxid && <TxidRow txid={approveTxid} />}
+            <p className="text-xs text-slate-500">
+              If your wallet shows the approval as confirmed, click below to check on-chain status and continue.
+            </p>
+            <button type="button" onClick={onCheckApproveStatus} className="btn-secondary text-sm w-full">
+              Check Status Again
+            </button>
           </>
         )}
 
@@ -215,7 +216,7 @@ export function TxProgress({ state, mode, onApprove, onCreate, onReset, onSkipAp
             {createTxid && <TxidRow txid={createTxid} />}
             <p className="text-xs text-slate-500">
               {elapsed > 0 ? `${elapsed}s elapsed · ` : ''}
-              Checking every 5 seconds.
+              Checking every 5 seconds. This can take a few minutes — please be patient.
             </p>
           </>
         )}
@@ -223,15 +224,14 @@ export function TxProgress({ state, mode, onApprove, onCreate, onReset, onSkipAp
         {/* create failed */}
         {phase === 'create_failed' && (
           <>
-            <p className="text-sm text-red-400 break-words">{error}</p>
-            <div className="flex items-center gap-3">
-              <button type="button" onClick={onCreate} className="btn-primary text-sm">
-                Retry create
-              </button>
-              <button type="button" onClick={onReset} className="text-xs text-slate-500 hover:text-white underline underline-offset-2">
-                Reset all
-              </button>
-            </div>
+            <p className="text-sm text-amber-400 break-words">{error}</p>
+            {createTxid && <TxidRow txid={createTxid} />}
+            <p className="text-xs text-slate-500">
+              If your wallet shows the transaction as confirmed, click below to check if the listing appeared on-chain.
+            </p>
+            <button type="button" onClick={onCheckCreateStatus} className="btn-secondary text-sm w-full">
+              Check Status Again
+            </button>
           </>
         )}
 

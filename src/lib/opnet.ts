@@ -1028,6 +1028,56 @@ export function hex32ToP2TRAddress(keyHex: string): string {
   return bech32m.encode(hrp, words, 90);
 }
 
+/**
+ * Resolve a P2TR bech32m address to its tweaked x-only pubkey (32-byte hex).
+ *
+ * Uses provider.getPublicKeysInfoRaw — the OPNet node handles any
+ * OPNet-specific key derivations correctly. Falls back to null when the node
+ * doesn't know the address (e.g. fresh wallet with no on-chain history).
+ *
+ * Only P2TR (witness v1) addresses are accepted. bc1q / tb1q (P2WPKH, v0)
+ * will return null because they have no tweakedPubkey.
+ */
+export async function resolveTweakedPubkey(address: string): Promise<string | null> {
+  const normalized = normalizeAddressHrp(address);
+  try {
+    const result = await getProvider().getPublicKeysInfoRaw(normalized);
+    // Result is keyed by the address string passed in; try both forms
+    const raw = result[normalized] ?? result[address];
+    if (!raw || 'error' in raw) return null;
+    const { tweakedPubkey } = raw as { tweakedPubkey?: string };
+    if (!tweakedPubkey) return null;
+    return tweakedPubkey.startsWith('0x') || tweakedPubkey.startsWith('0X')
+      ? tweakedPubkey
+      : '0x' + tweakedPubkey;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get the OPNet address hex string for the connected wallet.
+ *
+ * The OPNet address (0x-prefixed, 64-char hex) is derived from the wallet's
+ * MLDSA public key — completely separate from the P2TR address. It is exactly
+ * what the contract stores as `msg.sender` / `offer.maker`.
+ *
+ * Returns null when the MLDSA key is unavailable (non-OPNet wallet, SSR, or
+ * the wallet extension is locked).
+ */
+export async function getWalletOpnetAddressHex(walletP2trAddress: string): Promise<string | null> {
+  if (typeof window === 'undefined' || !window.opnet?.web3) return null;
+  try {
+    const mldsaKey = await window.opnet.web3.getMLDSAPublicKey();
+    if (!mldsaKey) return null;
+    const tweakedHex = p2trAddressToKeyHex(walletP2trAddress) ?? undefined;
+    const addr = Address.fromString(mldsaKey, tweakedHex);
+    return addr.toString();
+  } catch {
+    return null;
+  }
+}
+
 // ── Fee / P2TR helpers (pure, no network calls) ───────────────────────────────
 
 /** feeSats = ceil(btcSats × feeBps / 10_000) — mirrors contract logic */

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   getOffer,
@@ -12,12 +12,14 @@ import {
   fetchTokenInfo,
   fetchNftMetadata,
   fetchNftCollectionInfo,
+  checkTxConfirmed,
   keyToHex,
   hexToBigint,
   p2trScript,
   normalizeToHex32,
   hex32ToP2TRAddress,
   getOpscanTxUrl,
+  getWalletOpnetAddressHex,
   CONTRACT_ADDRESS,
   OP_NETWORK,
 } from '@/lib/opnet';
@@ -30,6 +32,7 @@ import { FillProgress } from '@/components/FillProgress';
 import { useWallet } from '@/context/WalletContext';
 import { useFillFlow } from '@/hooks/useFillFlow';
 import { fetchBtcBalanceSats } from '@/lib/wallet';
+import { getPendingTxs, addPendingTx, removePendingTx } from '@/lib/pendingTxs';
 
 // ── Status badge ─────────────────────────────────────────────────────────────
 
@@ -92,6 +95,8 @@ export default function OfferDetailPage({
   const [error, setError] = useState<string | null>(null);
 
   const fillFlow = useFillFlow(BigInt(id));
+  const resumedRef = useRef(false);
+  const cancelResumedRef = useRef(false);
 
   const [tokenInfo, setTokenInfo] = useState<TokenInfo | null>(null);
 
@@ -125,6 +130,38 @@ export default function OfferDetailPage({
   const [cancelLoading, setCancelLoading] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [cancelTxid, setCancelTxid] = useState<string | null>(null);
+  const [cancelConfirmed, setCancelConfirmed] = useState(false);
+
+  // isMaker — offer.maker is the MLDSA-derived OPNet address (0x hex), not the
+  // P2TR pubkey. Must compare using getMLDSAPublicKey(), not the P2TR address.
+  const [isMaker, setIsMaker] = useState(false);
+  useEffect(() => {
+    if (!offer || !address) { setIsMaker(false); return; }
+    let cancelled = false;
+    getWalletOpnetAddressHex(address)
+      .then(opnetAddr => {
+        if (cancelled) return;
+        if (!opnetAddr) { setIsMaker(false); return; }
+        setIsMaker(opnetAddr.toLowerCase() === offer.maker.toLowerCase());
+      })
+      .catch(() => { if (!cancelled) setIsMaker(false); });
+    return () => { cancelled = true; };
+  }, [offer?.maker, address]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Poll for cancel confirmation after tx is broadcast
+  useEffect(() => {
+    if (!cancelTxid || cancelConfirmed) return;
+    const poll = setInterval(async () => {
+      const confirmed = await checkTxConfirmed(cancelTxid).catch(() => false);
+      if (confirmed) {
+        clearInterval(poll);
+        removePendingTx(cancelTxid);
+        setCancelConfirmed(true);
+        setOffer(prev => prev ? { ...prev, status: 3 as OfferStatusCode } : null);
+      }
+    }, 5_000);
+    return () => clearInterval(poll);
+  }, [cancelTxid, cancelConfirmed]);
 
   useEffect(() => {
     const offerId = BigInt(id);
@@ -139,6 +176,36 @@ export default function OfferDetailPage({
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'))
       .finally(() => setLoading(false));
   }, [id]);
+
+  // Resume pending fill state when returning from a closed tab
+  useEffect(() => {
+    if (resumedRef.current || !offer || fillFlow.state.phase !== 'idle') return;
+    resumedRef.current = true;
+    const pending = getPendingTxs().find(t => t.type === 'fill' && t.offerId === id);
+    if (!pending) return;
+    if (offer.status === 2) {
+      removePendingTx(pending.txid); // offer already filled — clear stale entry
+      return;
+    }
+    if (offer.status === 1) {
+      fillFlow.setPending(pending.txid); // resume polling with the saved txid
+    }
+  }, [offer]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Resume pending cancel state when returning from a closed tab
+  useEffect(() => {
+    if (cancelResumedRef.current || !offer || cancelTxid) return;
+    cancelResumedRef.current = true;
+    const pending = getPendingTxs().find(t => t.type === 'cancel' && t.offerId === id);
+    if (!pending) return;
+    if (offer.status === 3) {
+      removePendingTx(pending.txid); // already cancelled — clear stale entry
+      return;
+    }
+    if (offer.status === 1) {
+      setCancelTxid(pending.txid); // resume cancel polling with the saved txid
+    }
+  }, [offer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (fillFlow.state.phase !== 'confirmed') return;
@@ -196,6 +263,7 @@ export default function OfferDetailPage({
         maximumAllowedSatToSpend: 100_000n,
         network: OP_NETWORK,
       });
+      addPendingTx({ type: 'cancel', txid: tx.transactionId, offerId: id });
       setCancelTxid(tx.transactionId);
     } catch (e) {
       setCancelError(e instanceof Error ? e.message : 'Transaction failed');
@@ -244,7 +312,6 @@ export default function OfferDetailPage({
     ? `Buy NFT · ${formatBtcFromSats(totalRequired)}`
     : `Buy tokens · ${formatBtcFromSats(totalRequired)}`;
   const isOpen = offer.status === 1;
-  const isMaker = address?.toLowerCase() === offer.maker.toLowerCase();
 
   const hasAllowedTaker = offer.allowedTaker !== 0n;
   const isAllowedTaker = (() => {
@@ -265,7 +332,7 @@ export default function OfferDetailPage({
     }
   })();
 
-  const showActions = isOpen || fillFlow.state.phase !== 'idle';
+  const showActions = isOpen || fillFlow.state.phase !== 'idle' || !!cancelTxid || cancelConfirmed;
 
   // NFT display name
   const nftName = nftMeta?.name ?? nftCollection?.name
@@ -356,7 +423,14 @@ export default function OfferDetailPage({
 
       {/* Details */}
       <div className="card grid grid-cols-1 sm:grid-cols-2 gap-5">
-        <Field label="Seller" value={offer.maker} mono />
+        <Field
+          label="Seller"
+          value={(() => {
+            try { return hex32ToP2TRAddress(keyToHex(offer.btcRecipientKey)); }
+            catch { return offer.maker; }
+          })()}
+          mono
+        />
         <Field label="Token contract" value={offer.token} mono />
 
         <Field
@@ -445,8 +519,8 @@ export default function OfferDetailPage({
         <div className="card space-y-4">
           <h2 className="text-base font-bold text-white">Trade</h2>
 
-          {/* OTC restriction notice */}
-          {isOpen && hasAllowedTaker && address && !isAllowedTaker && (
+          {/* OTC restriction notice — hidden once cancel is in progress */}
+          {isOpen && !cancelTxid && hasAllowedTaker && address && !isAllowedTaker && (
             <div className="bg-yellow-950/30 border border-yellow-700/30 rounded-xl p-4 text-xs text-yellow-400">
               <span className="font-semibold">OTC offer — restricted to one buyer.</span>{' '}
               Only{' '}
@@ -455,51 +529,97 @@ export default function OfferDetailPage({
             </div>
           )}
 
-          {/* Fill progress */}
-          <FillProgress
-            state={fillFlow.state}
-            onFill={handleFill}
-            onReset={fillFlow.reset}
-            disabled={Boolean(address && hasAllowedTaker && !isAllowedTaker)}
-            fillLabel={address ? buyLabel : 'Connect Wallet'}
-            btcBalanceSats={address ? btcBalanceSats : undefined}
-            requiredSats={isOpen ? totalRequired : undefined}
-          />
+          {/* Fill progress — hidden for the maker and once cancel is in progress */}
+          {!isMaker && !cancelTxid && !cancelConfirmed && (
+            <FillProgress
+              state={fillFlow.state}
+              onFill={handleFill}
+              onReset={fillFlow.reset}
+              onCheckStatus={() => void fillFlow.checkStatus()}
+              disabled={Boolean(address && hasAllowedTaker && !isAllowedTaker)}
+              fillLabel={address ? buyLabel : 'Connect Wallet'}
+              btcBalanceSats={address ? btcBalanceSats : undefined}
+              requiredSats={isOpen ? totalRequired : undefined}
+            />
+          )}
 
           {/* Cancel — maker only */}
-          {isOpen && isMaker && (
+          {isMaker && (
             <div className="border-t border-surface-border pt-4 space-y-3">
-              {cancelTxid && (
-                <div className="bg-surface rounded-xl px-4 py-3 border border-surface-border">
-                  <p className="text-[10px] font-semibold text-slate-600 uppercase tracking-widest mb-1">
-                    Cancel transaction sent
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-slate-500 font-mono flex-1 min-w-0 truncate">
-                      {cancelTxid.slice(0, 12)}…{cancelTxid.slice(-8)}
-                    </span>
-                    <a
-                      href={getOpscanTxUrl(cancelTxid)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-brand hover:underline shrink-0"
-                    >
-                      OPScan →
-                    </a>
+
+              {/* Idle: show button */}
+              {!cancelTxid && !cancelConfirmed && isOpen && (
+                <>
+                  {cancelError && (
+                    <p className="text-sm text-red-400">{cancelError}</p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void handleCancel()}
+                    disabled={cancelLoading}
+                    className="btn-danger"
+                  >
+                    {cancelLoading ? 'Submitting…' : 'Cancel Offer'}
+                  </button>
+                </>
+              )}
+
+              {/* Pending: spinner + txid + patience */}
+              {cancelTxid && !cancelConfirmed && (
+                <>
+                  <div className="flex items-center gap-3 text-sm text-slate-300">
+                    <span className="inline-block w-4 h-4 border-2 border-brand border-t-transparent rounded-full animate-spin shrink-0" />
+                    Waiting for cancellation to confirm…
                   </div>
-                </div>
+                  <div className="bg-surface rounded-xl px-4 py-3 border border-surface-border">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-500 font-mono flex-1 min-w-0 truncate">
+                        {cancelTxid.slice(0, 12)}…{cancelTxid.slice(-8)}
+                      </span>
+                      <a
+                        href={getOpscanTxUrl(cancelTxid)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-brand hover:underline shrink-0"
+                      >
+                        OPScan →
+                      </a>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Checking every 5 seconds. This can take a few minutes — please be patient.
+                  </p>
+                </>
               )}
-              {cancelError && (
-                <p className="text-sm text-red-400">{cancelError}</p>
+
+              {/* Confirmed */}
+              {cancelConfirmed && cancelTxid && (
+                <>
+                  <div className="flex items-center gap-2 text-green-400">
+                    <span className="text-lg leading-none">✓</span>
+                    <p className="text-sm font-semibold">Listing cancelled successfully.</p>
+                  </div>
+                  <div className="bg-surface rounded-xl px-4 py-3 border border-surface-border">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-500 font-mono flex-1 min-w-0 truncate">
+                        {cancelTxid.slice(0, 12)}…{cancelTxid.slice(-8)}
+                      </span>
+                      <a
+                        href={getOpscanTxUrl(cancelTxid)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-brand hover:underline shrink-0"
+                      >
+                        OPScan →
+                      </a>
+                    </div>
+                  </div>
+                  <Link href="/" className="text-sm text-brand hover:underline inline-block">
+                    ← Browse listings
+                  </Link>
+                </>
               )}
-              <button
-                type="button"
-                onClick={() => void handleCancel()}
-                disabled={cancelLoading}
-                className="btn-danger"
-              >
-                {cancelLoading ? 'Submitting…' : 'Cancel Offer'}
-              </button>
+
             </div>
           )}
         </div>
