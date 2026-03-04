@@ -121,7 +121,13 @@ export function OfferCard({ offer, createdAt }: Props) {
   return (
     <>
     {buyOpen && <QuickBuyModal offer={offer} onClose={() => setBuyOpen(false)} />}
-    <div className="flex flex-col bg-surface-card border border-surface-border rounded-2xl overflow-hidden transition-colors duration-200 hover:border-surface-bright">
+    <div
+      className="flex flex-col bg-surface-card border border-surface-border rounded-2xl overflow-hidden transition-colors duration-200 hover:border-surface-bright cursor-pointer"
+      onClick={(e) => {
+        if ((e.target as HTMLElement).closest('button, a')) return;
+        router.push(`/listing/${offer.id.toString()}`);
+      }}
+    >
 
       {/* Visual area */}
       {offer.isNFT ? (
