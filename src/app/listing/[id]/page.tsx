@@ -344,7 +344,7 @@ export default function OfferDetailPage({
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-[11px] font-semibold text-slate-600 uppercase tracking-widest mb-1">
-            {offer.isNFT ? 'OP-721 Listing' : 'OP-20 Listing'}
+            {offer.isNFT ? 'OP-721' : 'OP-20'}
           </p>
           <h1 className="text-2xl font-bold text-white tracking-tight">
             Listing <span className="text-brand">#{offer.id.toString()}</span>
