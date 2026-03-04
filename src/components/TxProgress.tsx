@@ -16,6 +16,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { getOpscanTxUrl } from '@/lib/opnet';
 import type { TxFlowState } from '@/hooks/useTxFlow';
+import { APPROVE_SLOW_S } from '@/hooks/useTxFlow';
 
 interface Props {
   state: TxFlowState;
@@ -23,9 +24,12 @@ interface Props {
   onApprove: () => void;
   onCreate: () => void;
   onReset: () => void;
-  onSkipApprove: () => void;
   onCheckApproveStatus: () => void;
   onCheckCreateStatus: () => void;
+  /** Called when create failed before broadcast (wallet rejected / simulation reverted). */
+  onRetryCreate: () => void;
+  /** Disable Approve / Create buttons (e.g. live validation failure). */
+  disabled?: boolean;
 }
 
 type StepStatus = 'waiting' | 'active' | 'done' | 'error';
@@ -103,7 +107,7 @@ function TxidRow({ txid }: { txid: string }) {
   );
 }
 
-export function TxProgress({ state, mode, onApprove, onCreate, onReset, onSkipApprove, onCheckApproveStatus, onCheckCreateStatus }: Props) {
+export function TxProgress({ state, mode, onApprove, onCreate, onReset, onCheckApproveStatus, onCheckCreateStatus, onRetryCreate, disabled }: Props) {
   const { phase, approveTxid, createTxid, offerId, error, elapsed } = state;
 
   const approveStatus = (): StepStatus => {
@@ -130,7 +134,7 @@ export function TxProgress({ state, mode, onApprove, onCreate, onReset, onSkipAp
       <div className="flex items-center gap-2 px-4 py-3 bg-surface">
         <StepIndicator status={approveStatus()} label={`Approve ${tokenLabel}`} />
         <div className="flex-1 border-t border-surface-border" />
-        <StepIndicator status={createStatus()} label="Create offer" />
+        <StepIndicator status={createStatus()} label="Create listing" />
         <div className="flex-1 border-t border-surface-border" />
         <StepIndicator status={doneStatus} label="Done" />
       </div>
@@ -141,10 +145,12 @@ export function TxProgress({ state, mode, onApprove, onCreate, onReset, onSkipAp
         {/* idle */}
         {phase === 'idle' && (
           <>
-            <p className="text-sm text-slate-400">
-              Two steps: first allow the escrow to transfer your {tokenLabel}, then create the listing.
-            </p>
-            <button type="button" onClick={onApprove} className="btn-secondary text-sm w-full">
+            <button
+              type="button"
+              onClick={onApprove}
+              disabled={disabled}
+              className="btn-secondary text-sm w-full disabled:opacity-40 disabled:cursor-not-allowed"
+            >
               Step 1 — Approve {tokenLabel}
             </button>
           </>
@@ -163,21 +169,44 @@ export function TxProgress({ state, mode, onApprove, onCreate, onReset, onSkipAp
           <>
             <div className="flex items-center gap-3 text-sm text-slate-300">
               <Spinner />
-              Waiting for confirmation on-chain…
+              Waiting for on-chain approval state…
             </div>
             {approveTxid && <TxidRow txid={approveTxid} />}
             <p className="text-xs text-slate-500">
               {elapsed > 0 ? `${elapsed}s elapsed · ` : ''}
-              Checking every 5 seconds. This can take a few minutes — please be patient.
+              Polling every 5 seconds. Advances only when on-chain state is verified.
             </p>
+            {elapsed >= APPROVE_SLOW_S && (
+              <p className="text-xs text-yellow-500/80">
+                This can take a few minutes — please be patient.
+              </p>
+            )}
+            {elapsed >= 600 && (
+              <button type="button" onClick={onCheckApproveStatus} className="btn-secondary text-sm w-full">
+                Recheck Status
+              </button>
+            )}
           </>
         )}
 
-        {/* approve failed */}
-        {phase === 'approve_failed' && (
+        {/* approve failed — wallet rejected (no txid) */}
+        {phase === 'approve_failed' && !approveTxid && (
           <>
             <p className="text-sm text-amber-400 break-words">{error}</p>
-            {approveTxid && <TxidRow txid={approveTxid} />}
+            <p className="text-xs text-slate-500">
+              No transaction was sent. You can adjust your settings and try again.
+            </p>
+            <button type="button" onClick={onReset} className="btn-secondary text-sm w-full">
+              Try Again
+            </button>
+          </>
+        )}
+
+        {/* approve failed — tx was broadcast but confirmation timed out / failed */}
+        {phase === 'approve_failed' && approveTxid && (
+          <>
+            <p className="text-sm text-amber-400 break-words">{error}</p>
+            <TxidRow txid={approveTxid} />
             <p className="text-xs text-slate-500">
               If your wallet shows the approval as confirmed, click below to check on-chain status and continue.
             </p>
@@ -190,9 +219,20 @@ export function TxProgress({ state, mode, onApprove, onCreate, onReset, onSkipAp
         {/* approve confirmed → ready for create */}
         {phase === 'approve_confirmed' && (
           <>
-            <p className="text-sm text-green-400 font-medium">✓ Approval confirmed</p>
+            {approveTxid === null ? (
+              <p className="text-sm text-green-400 font-medium">
+                ✓ Approval sufficient — existing allowance covers this listing
+              </p>
+            ) : (
+              <p className="text-sm text-green-400 font-medium">✓ Approval confirmed</p>
+            )}
             {approveTxid && <TxidRow txid={approveTxid} />}
-            <button type="button" onClick={onCreate} className="btn-primary text-sm w-full">
+            <button
+              type="button"
+              onClick={onCreate}
+              disabled={disabled}
+              className="btn-primary text-sm w-full disabled:opacity-40 disabled:cursor-not-allowed"
+            >
               Step 2 — Create Listing →
             </button>
           </>
@@ -202,7 +242,7 @@ export function TxProgress({ state, mode, onApprove, onCreate, onReset, onSkipAp
         {phase === 'create_simulating' && (
           <div className="flex items-center gap-3 text-sm text-slate-300">
             <Spinner />
-            Preparing create offer transaction…
+            Preparing listing transaction…
           </div>
         )}
 
@@ -211,21 +251,37 @@ export function TxProgress({ state, mode, onApprove, onCreate, onReset, onSkipAp
           <>
             <div className="flex items-center gap-3 text-sm text-slate-300">
               <Spinner />
-              Waiting for offer to appear on-chain…
+              Listing submitted — waiting for on-chain state…
             </div>
             {createTxid && <TxidRow txid={createTxid} />}
             <p className="text-xs text-slate-500">
               {elapsed > 0 ? `${elapsed}s elapsed · ` : ''}
               Checking every 5 seconds. This can take a few minutes — please be patient.
             </p>
+            <button type="button" onClick={onCheckCreateStatus} className="btn-secondary text-sm w-full">
+              Recheck Status
+            </button>
           </>
         )}
 
-        {/* create failed */}
-        {phase === 'create_failed' && (
+        {/* create failed — wallet rejected or simulation reverted (no txid) */}
+        {phase === 'create_failed' && !createTxid && (
           <>
             <p className="text-sm text-amber-400 break-words">{error}</p>
-            {createTxid && <TxidRow txid={createTxid} />}
+            <p className="text-xs text-slate-500">
+              No transaction was sent. Your approval is still valid — you can try creating the listing again.
+            </p>
+            <button type="button" onClick={onRetryCreate} className="btn-secondary text-sm w-full">
+              Try Again
+            </button>
+          </>
+        )}
+
+        {/* create failed — tx was broadcast but confirmation timed out */}
+        {phase === 'create_failed' && createTxid && (
+          <>
+            <p className="text-sm text-amber-400 break-words">{error}</p>
+            <TxidRow txid={createTxid} />
             <p className="text-xs text-slate-500">
               If your wallet shows the transaction as confirmed, click below to check if the listing appeared on-chain.
             </p>
@@ -238,17 +294,17 @@ export function TxProgress({ state, mode, onApprove, onCreate, onReset, onSkipAp
         {/* create confirmed */}
         {phase === 'create_confirmed' && offerId !== null && (
           <>
-            <p className="text-base font-semibold text-green-400">Offer created!</p>
+            <p className="text-base font-semibold text-green-400">Listing created!</p>
             <p className="text-sm text-slate-400">
               Listing <span className="text-white font-mono">#{offerId.toString()}</span> is live on-chain.
             </p>
             {createTxid && <TxidRow txid={createTxid} />}
             <p className="text-xs text-slate-500">Redirecting in 2 seconds…</p>
             <Link
-              href={`/offer/${offerId.toString()}`}
+              href={`/listing/${offerId.toString()}`}
               className="btn-primary text-sm w-full inline-block text-center"
             >
-              View Offer →
+              View Listing →
             </Link>
           </>
         )}

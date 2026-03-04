@@ -12,13 +12,11 @@ import {
   fetchTokenInfo,
   fetchNftMetadata,
   fetchNftCollectionInfo,
-  checkTxConfirmed,
   keyToHex,
   hexToBigint,
   p2trScript,
   normalizeToHex32,
   hex32ToP2TRAddress,
-  getOpscanTxUrl,
   getWalletOpnetAddressHex,
   CONTRACT_ADDRESS,
   OP_NETWORK,
@@ -28,11 +26,14 @@ import { formatTokenCompact, formatUnits } from '@/lib/tokens';
 import type { Offer, OfferStatusCode } from '@/types/offer';
 import { OFFER_STATUS } from '@/types/offer';
 import { Field } from '@/components/Field';
+import { CopyableAddress } from '@/components/CopyableAddress';
 import { FillProgress } from '@/components/FillProgress';
+import { CancelProgress } from '@/components/CancelProgress';
 import { useWallet } from '@/context/WalletContext';
 import { useFillFlow } from '@/hooks/useFillFlow';
+import { useCancelFlow } from '@/hooks/useCancelFlow';
 import { fetchBtcBalanceSats } from '@/lib/wallet';
-import { getPendingTxs, addPendingTx, removePendingTx } from '@/lib/pendingTxs';
+import { getPendingTxs, removePendingTx } from '@/lib/pendingTxs';
 
 // ── Status badge ─────────────────────────────────────────────────────────────
 
@@ -94,8 +95,9 @@ export default function OfferDetailPage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fillFlow = useFillFlow(BigInt(id));
-  const resumedRef = useRef(false);
+  const fillFlow   = useFillFlow(BigInt(id));
+  const cancelFlow = useCancelFlow(BigInt(id));
+  const resumedRef       = useRef(false);
   const cancelResumedRef = useRef(false);
 
   const [tokenInfo, setTokenInfo] = useState<TokenInfo | null>(null);
@@ -127,13 +129,6 @@ export default function OfferDetailPage({
     fetchBtcBalanceSats().then((bal) => setBtcBalanceSats(bal));
   }, [address]);
 
-  const [cancelLoading, setCancelLoading] = useState(false);
-  const [cancelError, setCancelError] = useState<string | null>(null);
-  const [cancelTxid, setCancelTxid] = useState<string | null>(null);
-  const [cancelConfirmed, setCancelConfirmed] = useState(false);
-
-  // isMaker — offer.maker is the MLDSA-derived OPNet address (0x hex), not the
-  // P2TR pubkey. Must compare using getMLDSAPublicKey(), not the P2TR address.
   const [isMaker, setIsMaker] = useState(false);
   useEffect(() => {
     if (!offer || !address) { setIsMaker(false); return; }
@@ -147,21 +142,6 @@ export default function OfferDetailPage({
       .catch(() => { if (!cancelled) setIsMaker(false); });
     return () => { cancelled = true; };
   }, [offer?.maker, address]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Poll for cancel confirmation after tx is broadcast
-  useEffect(() => {
-    if (!cancelTxid || cancelConfirmed) return;
-    const poll = setInterval(async () => {
-      const confirmed = await checkTxConfirmed(cancelTxid).catch(() => false);
-      if (confirmed) {
-        clearInterval(poll);
-        removePendingTx(cancelTxid);
-        setCancelConfirmed(true);
-        setOffer(prev => prev ? { ...prev, status: 3 as OfferStatusCode } : null);
-      }
-    }, 5_000);
-    return () => clearInterval(poll);
-  }, [cancelTxid, cancelConfirmed]);
 
   useEffect(() => {
     const offerId = BigInt(id);
@@ -177,33 +157,31 @@ export default function OfferDetailPage({
       .finally(() => setLoading(false));
   }, [id]);
 
-  // Resume pending fill state when returning from a closed tab
   useEffect(() => {
     if (resumedRef.current || !offer || fillFlow.state.phase !== 'idle') return;
     resumedRef.current = true;
     const pending = getPendingTxs().find(t => t.type === 'fill' && t.offerId === id);
     if (!pending) return;
     if (offer.status === 2) {
-      removePendingTx(pending.txid); // offer already filled — clear stale entry
+      removePendingTx(pending.txid);
       return;
     }
     if (offer.status === 1) {
-      fillFlow.setPending(pending.txid); // resume polling with the saved txid
+      fillFlow.setPending(pending.txid);
     }
   }, [offer]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Resume pending cancel state when returning from a closed tab
   useEffect(() => {
-    if (cancelResumedRef.current || !offer || cancelTxid) return;
+    if (cancelResumedRef.current || !offer || cancelFlow.state.phase !== 'idle') return;
     cancelResumedRef.current = true;
     const pending = getPendingTxs().find(t => t.type === 'cancel' && t.offerId === id);
     if (!pending) return;
     if (offer.status === 3) {
-      removePendingTx(pending.txid); // already cancelled — clear stale entry
+      removePendingTx(pending.txid);
       return;
     }
     if (offer.status === 1) {
-      setCancelTxid(pending.txid); // resume cancel polling with the saved txid
+      cancelFlow.setPending(pending.txid);
     }
   }, [offer]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -211,6 +189,11 @@ export default function OfferDetailPage({
     if (fillFlow.state.phase !== 'confirmed') return;
     setOffer((prev) => (prev ? { ...prev, status: 2 as OfferStatusCode } : null));
   }, [fillFlow.state.phase]);
+
+  useEffect(() => {
+    if (cancelFlow.state.phase !== 'confirmed') return;
+    setOffer((prev) => (prev ? { ...prev, status: 3 as OfferStatusCode } : null));
+  }, [cancelFlow.state.phase]);
 
   // ── Fill offer ─────────────────────────────────────────────────────────────
   const handleFill = async () => {
@@ -246,14 +229,9 @@ export default function OfferDetailPage({
   // ── Cancel offer ──────────────────────────────────────────────────────────
   const handleCancel = async () => {
     if (!offer) return;
-    setCancelError(null);
+    if (!address) { await connect(); return; }
 
-    if (!address) {
-      await connect();
-      return;
-    }
-
-    setCancelLoading(true);
+    cancelFlow.setSubmitting();
     try {
       const simulation = await simulateEscrowWrite('cancelOffer', [offer.id], address);
       const tx = await simulation.sendTransaction({
@@ -263,12 +241,9 @@ export default function OfferDetailPage({
         maximumAllowedSatToSpend: 100_000n,
         network: OP_NETWORK,
       });
-      addPendingTx({ type: 'cancel', txid: tx.transactionId, offerId: id });
-      setCancelTxid(tx.transactionId);
+      cancelFlow.setPending(tx.transactionId);
     } catch (e) {
-      setCancelError(e instanceof Error ? e.message : 'Transaction failed');
-    } finally {
-      setCancelLoading(false);
+      cancelFlow.setFailed(e instanceof Error ? e.message : 'Transaction failed');
     }
   };
 
@@ -297,8 +272,8 @@ export default function OfferDetailPage({
       <div className="max-w-2xl mx-auto card text-center text-slate-500 py-16">
         <p className="text-3xl mb-4 text-slate-700">?</p>
         <p className="font-semibold text-slate-400">Listing #{id} not found</p>
-        <Link href="/" className="text-brand hover:underline text-sm mt-3 inline-block">
-          ← Back to explore
+        <Link href="/assets" className="text-brand hover:underline text-sm mt-3 inline-block">
+          ← Back to listings
         </Link>
       </div>
     );
@@ -332,9 +307,8 @@ export default function OfferDetailPage({
     }
   })();
 
-  const showActions = isOpen || fillFlow.state.phase !== 'idle' || !!cancelTxid || cancelConfirmed;
+  const showActions = isOpen || fillFlow.state.phase !== 'idle' || cancelFlow.state.phase !== 'idle';
 
-  // NFT display name
   const nftName = nftMeta?.name ?? nftCollection?.name
     ? `${nftMeta?.name ?? nftCollection?.name} #${offer.tokenId.toString()}`
     : `NFT #${offer.tokenId.toString()}`;
@@ -343,8 +317,8 @@ export default function OfferDetailPage({
     <div className="max-w-2xl mx-auto space-y-6 pt-2">
 
       {/* Back */}
-      <Link href="/" className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-white transition-colors">
-        ← Explore
+      <Link href="/assets" className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-white transition-colors">
+        ← All listings
       </Link>
 
       {/* Header */}
@@ -354,7 +328,7 @@ export default function OfferDetailPage({
             {offer.isNFT ? 'OP-721 Listing' : 'OP-20 Listing'}
           </p>
           <h1 className="text-2xl font-bold text-white tracking-tight">
-            #{offer.id.toString()}
+            Listing <span className="text-brand">#{offer.id.toString()}</span>
           </h1>
         </div>
         <span className={`shrink-0 text-[11px] font-semibold px-3 py-1 rounded-full ${STATUS_STYLES[offer.status]}`}>
@@ -426,28 +400,27 @@ export default function OfferDetailPage({
         <Field
           label="Seller"
           value={(() => {
-            try { return hex32ToP2TRAddress(keyToHex(offer.btcRecipientKey)); }
-            catch { return offer.maker; }
+            try {
+              const bech32 = hex32ToP2TRAddress(keyToHex(offer.btcRecipientKey));
+              return <CopyableAddress full={bech32} orange />;
+            } catch {
+              return <CopyableAddress full={offer.maker} orange />;
+            }
           })()}
-          mono
         />
-        <Field label="Token contract" value={offer.token} mono />
+        <Field
+          label="Token contract"
+          value={<CopyableAddress full={offer.token} orange />}
+        />
 
         <Field
-          label="Buyer restriction"
+          label="Private buyer"
           value={
             hasAllowedTaker ? (
-              <span>
-                <span className="text-yellow-400 break-all">{allowedTakerBech32}</span>
-                <details className="mt-1">
-                  <summary className="text-xs text-slate-600 cursor-pointer hover:text-slate-400 select-none w-fit">
-                    Advanced (hex)
-                  </summary>
-                  <span className="block text-slate-700 font-mono text-xs mt-0.5 break-all">
-                    {keyToHex(offer.allowedTaker)}
-                  </span>
-                </details>
-              </span>
+              <CopyableAddress
+                full={allowedTakerBech32 || keyToHex(offer.allowedTaker)}
+                className="text-yellow-400"
+              />
             ) : (
               <span className="text-emerald-400">Public — anyone can fill</span>
             )
@@ -457,12 +430,78 @@ export default function OfferDetailPage({
         <Field label="Standard" value={offer.isNFT ? 'OP-721 NFT' : 'OP-20 Token'} />
       </div>
 
+      {/* ── Actions ──────────────────────────────────────────────────────── */}
+      {showActions && (
+        <div className="card space-y-4">
+          <h2 className="text-base font-bold text-white">Trade</h2>
+
+          {isOpen && cancelFlow.state.phase === 'idle' && hasAllowedTaker && address && !isAllowedTaker && (
+            <div className="bg-yellow-950/30 border border-yellow-700/30 rounded-xl p-4 text-xs text-yellow-400">
+              <span className="font-semibold">Private listing — restricted to:</span>{' '}
+              <span className="font-mono break-all">{allowedTakerBech32 || keyToHex(offer.allowedTaker)}</span>
+            </div>
+          )}
+
+          {!isMaker && cancelFlow.state.phase === 'idle' && (
+            <FillProgress
+              state={fillFlow.state}
+              onFill={handleFill}
+              onReset={fillFlow.reset}
+              onCheckStatus={() => void fillFlow.checkStatus()}
+              disabled={Boolean(address && hasAllowedTaker && !isAllowedTaker)}
+              fillLabel={address ? buyLabel : 'Connect Wallet'}
+              btcBalanceSats={address ? btcBalanceSats : undefined}
+              requiredSats={isOpen ? totalRequired : undefined}
+            />
+          )}
+
+          {isMaker && (
+            <div className="border-t border-surface-border pt-4 space-y-3">
+
+              {/* Cancel button — only shown when idle and offer is still open */}
+              {cancelFlow.state.phase === 'idle' && isOpen && (
+                <button
+                  type="button"
+                  onClick={() => void handleCancel()}
+                  className="btn-danger"
+                >
+                  Cancel Listing
+                </button>
+              )}
+
+              {/* Cancel progress — shown in all non-idle phases */}
+              {cancelFlow.state.phase !== 'idle' && (
+                <CancelProgress
+                  state={cancelFlow.state}
+                  onCheckStatus={() => void cancelFlow.checkStatus()}
+                  onReset={cancelFlow.reset}
+                />
+              )}
+
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Non-open state */}
+      {!isOpen && fillFlow.state.phase === 'idle' && cancelFlow.state.phase === 'idle' && (
+        <div className="card text-center text-slate-500 py-10">
+          <p className="text-lg font-bold text-slate-300">
+            {OFFER_STATUS[offer.status]}
+          </p>
+          <p className="text-sm mt-1.5">This listing is no longer active.</p>
+          <Link href="/assets" className="text-brand hover:underline text-sm mt-4 inline-block">
+            ← Browse listings
+          </Link>
+        </div>
+      )}
+
       {/* Transaction details — collapsible */}
       {isOpen && (
         <details className="card border-surface-border group">
           <summary className="cursor-pointer select-none text-sm font-semibold text-slate-500 hover:text-white transition-colors list-none flex items-center gap-2">
             <span className="text-slate-700 group-open:rotate-90 transition-transform duration-150 inline-block">▶</span>
-            Transaction requirements
+            Transaction Details
           </summary>
 
           <div className="mt-5 space-y-4">
@@ -512,130 +551,6 @@ export default function OfferDetailPage({
             </p>
           </div>
         </details>
-      )}
-
-      {/* ── Actions ──────────────────────────────────────────────────────── */}
-      {showActions && (
-        <div className="card space-y-4">
-          <h2 className="text-base font-bold text-white">Trade</h2>
-
-          {/* OTC restriction notice — hidden once cancel is in progress */}
-          {isOpen && !cancelTxid && hasAllowedTaker && address && !isAllowedTaker && (
-            <div className="bg-yellow-950/30 border border-yellow-700/30 rounded-xl p-4 text-xs text-yellow-400">
-              <span className="font-semibold">OTC offer — restricted to one buyer.</span>{' '}
-              Only{' '}
-              <span className="font-mono break-all">{allowedTakerBech32 || keyToHex(offer.allowedTaker)}</span>{' '}
-              can fill this offer.
-            </div>
-          )}
-
-          {/* Fill progress — hidden for the maker and once cancel is in progress */}
-          {!isMaker && !cancelTxid && !cancelConfirmed && (
-            <FillProgress
-              state={fillFlow.state}
-              onFill={handleFill}
-              onReset={fillFlow.reset}
-              onCheckStatus={() => void fillFlow.checkStatus()}
-              disabled={Boolean(address && hasAllowedTaker && !isAllowedTaker)}
-              fillLabel={address ? buyLabel : 'Connect Wallet'}
-              btcBalanceSats={address ? btcBalanceSats : undefined}
-              requiredSats={isOpen ? totalRequired : undefined}
-            />
-          )}
-
-          {/* Cancel — maker only */}
-          {isMaker && (
-            <div className="border-t border-surface-border pt-4 space-y-3">
-
-              {/* Idle: show button */}
-              {!cancelTxid && !cancelConfirmed && isOpen && (
-                <>
-                  {cancelError && (
-                    <p className="text-sm text-red-400">{cancelError}</p>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => void handleCancel()}
-                    disabled={cancelLoading}
-                    className="btn-danger"
-                  >
-                    {cancelLoading ? 'Submitting…' : 'Cancel Offer'}
-                  </button>
-                </>
-              )}
-
-              {/* Pending: spinner + txid + patience */}
-              {cancelTxid && !cancelConfirmed && (
-                <>
-                  <div className="flex items-center gap-3 text-sm text-slate-300">
-                    <span className="inline-block w-4 h-4 border-2 border-brand border-t-transparent rounded-full animate-spin shrink-0" />
-                    Waiting for cancellation to confirm…
-                  </div>
-                  <div className="bg-surface rounded-xl px-4 py-3 border border-surface-border">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-slate-500 font-mono flex-1 min-w-0 truncate">
-                        {cancelTxid.slice(0, 12)}…{cancelTxid.slice(-8)}
-                      </span>
-                      <a
-                        href={getOpscanTxUrl(cancelTxid)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-brand hover:underline shrink-0"
-                      >
-                        OPScan →
-                      </a>
-                    </div>
-                  </div>
-                  <p className="text-xs text-slate-500">
-                    Checking every 5 seconds. This can take a few minutes — please be patient.
-                  </p>
-                </>
-              )}
-
-              {/* Confirmed */}
-              {cancelConfirmed && cancelTxid && (
-                <>
-                  <div className="flex items-center gap-2 text-green-400">
-                    <span className="text-lg leading-none">✓</span>
-                    <p className="text-sm font-semibold">Listing cancelled successfully.</p>
-                  </div>
-                  <div className="bg-surface rounded-xl px-4 py-3 border border-surface-border">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-slate-500 font-mono flex-1 min-w-0 truncate">
-                        {cancelTxid.slice(0, 12)}…{cancelTxid.slice(-8)}
-                      </span>
-                      <a
-                        href={getOpscanTxUrl(cancelTxid)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-brand hover:underline shrink-0"
-                      >
-                        OPScan →
-                      </a>
-                    </div>
-                  </div>
-                  <Link href="/" className="text-sm text-brand hover:underline inline-block">
-                    ← Browse listings
-                  </Link>
-                </>
-              )}
-
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Non-open state */}
-      {!isOpen && fillFlow.state.phase === 'idle' && (
-        <div className="card text-center text-slate-500 py-10">
-          <p className="text-lg font-bold text-slate-300">
-            {OFFER_STATUS[offer.status]}
-          </p>
-          <p className="text-sm mt-1.5">This listing is no longer active.</p>
-          <Link href="/" className="text-brand hover:underline text-sm mt-4 inline-block">
-            ← Browse listings
-          </Link>
-        </div>
       )}
 
       {/* Contract reference */}

@@ -5,6 +5,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from 'react';
 import {
@@ -13,6 +14,7 @@ import {
   getConnectedAddress,
   type WalletProvider,
 } from '@/lib/wallet';
+import { clearAllPendingTxs } from '@/lib/pendingTxs';
 
 interface WalletState {
   address: string | null;
@@ -37,6 +39,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [provider, setProvider] = useState<WalletProvider>('none');
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const prevAddressRef = useRef<string | null>(null);
 
   // Auto-restore connection on page load
   useEffect(() => {
@@ -46,6 +49,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (addr) setAddress(addr);
     });
   }, []);
+
+  // Clear pending txs when wallet changes to a different address
+  useEffect(() => {
+    const prev = prevAddressRef.current;
+    if (prev !== null && address !== null && prev !== address) {
+      clearAllPendingTxs();
+    }
+    prevAddressRef.current = address;
+  }, [address]);
 
   const connect = useCallback(async () => {
     setConnecting(true);
@@ -62,6 +74,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const disconnect = useCallback(() => {
+    clearAllPendingTxs();
     setAddress(null);
   }, []);
 

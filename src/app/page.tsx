@@ -27,18 +27,18 @@ function CopyAddress({ address }: { address: string }) {
 
 export default function HomePage() {
   return (
-    <div className="flex flex-col items-center justify-center min-h-[70vh] text-center space-y-8 pt-8 pb-12">
+    <div className="flex flex-col items-center justify-center min-h-[75vh] text-center space-y-10 pt-10 pb-16">
 
       {/* Satoshi portrait */}
       <div className="relative">
         <div className="absolute inset-0 rounded-full bg-brand/15 blur-3xl scale-[1.8]" />
         <div className="absolute inset-0 rounded-full bg-brand/8 blur-xl scale-[1.3]" />
-        <div className="relative w-32 h-32 sm:w-40 sm:h-40 rounded-full overflow-hidden border-2 border-brand/50 shadow-[0_0_40px_rgba(247,147,26,0.35)]">
+        <div className="relative w-36 h-36 sm:w-48 sm:h-48 rounded-full overflow-hidden border-2 border-brand/50 shadow-[0_0_40px_rgba(247,147,26,0.35)]">
           <Image
             src="/satoshilogo.png"
             alt="Satoshi"
-            width={160}
-            height={160}
+            width={192}
+            height={192}
             className="w-full h-full object-cover object-top"
             priority
           />
@@ -46,22 +46,22 @@ export default function HomePage() {
       </div>
 
       {/* Headline */}
-      <div className="space-y-4">
-        <h1 className="text-5xl sm:text-6xl lg:text-7xl font-extrabold text-white tracking-tight leading-none">
+      <div className="space-y-5">
+        <h1 className="text-6xl sm:text-7xl lg:text-8xl font-extrabold text-white tracking-tight leading-none">
           Satoshi&apos;s{' '}
           <span className="text-brand">Market</span>
         </h1>
-        <p className="text-lg sm:text-xl text-slate-400 font-medium max-w-lg mx-auto leading-relaxed">
+        <p className="text-xl sm:text-2xl text-slate-400 font-medium max-w-xl mx-auto leading-relaxed">
           Trustless peer-to-peer trading on Bitcoin.
         </p>
       </div>
 
       {/* CTAs */}
-      <div className="flex flex-wrap items-center justify-center gap-3">
-        <Link href="/collections" className="btn-primary px-8 py-3 text-base">
-          Browse Collections
+      <div className="flex flex-wrap items-center justify-center gap-4">
+        <Link href="/assets" className="btn-secondary px-10 py-3.5 text-lg">
+          Trade Assets
         </Link>
-        <Link href="/create" className="btn-secondary px-8 py-3 text-base">
+        <Link href="/create" className="btn-secondary px-10 py-3.5 text-lg">
           Create Listing
         </Link>
       </div>

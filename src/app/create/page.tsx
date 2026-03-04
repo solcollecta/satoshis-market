@@ -6,7 +6,6 @@ import { useWallet } from '@/context/WalletContext';
 import {
   CONTRACT_ADDRESS,
   OP_NETWORK,
-  OP_NETWORK_NAME,
   simulateApprove,
   simulateNftApprove,
   simulateEscrowWrite,
@@ -15,7 +14,7 @@ import {
   hexToBigint,
   fetchTokenInfo,
   fetchAllowance,
-  resolveTweakedPubkey,
+  fetchNftApproval,
   type NftEntry,
 } from '@/lib/opnet';
 import { parseUnits, parseBtcToSats, formatUnits, saveListingTimestamp, type CachedToken } from '@/lib/tokens';
@@ -30,6 +29,9 @@ type Mode = 'op20' | 'op721';
 // Platform fee is fixed at 0.5% — not user-configurable.
 const PLATFORM_FEE_BPS = 50;
 
+// Minimum sats for any single Bitcoin output (OPNet safety threshold).
+const DUST_THRESHOLD = 546n;
+
 export default function CreateOfferPage() {
   const router = useRouter();
   const { address, connect, provider } = useWallet();
@@ -42,14 +44,10 @@ export default function CreateOfferPage() {
   const [tokenAmountHuman, setTokenAmountHuman] = useState('');
   const [tokenId, setTokenId] = useState('');
   const [btcValue, setBtcValue] = useState('');
-  /** Human-readable P2TR address shown in the input (opt1p… / bc1p… / tb1p…) */
-  const [payoutAddress, setPayoutAddress] = useState('');
-  /** Resolved tweaked pubkey (0x hex) — derived from payoutAddress, never shown to user */
-  const [makerRecipientKey, setMakerRecipientKey] = useState('');
-  const [payoutResolving, setPayoutResolving] = useState(false);
-  const [payoutResolved, setPayoutResolved] = useState(false);
-  const [payoutResolveError, setPayoutResolveError] = useState<string | null>(null);
   const [allowedTaker, setAllowedTaker] = useState('');
+
+  /** Derived from connected wallet — no user input, no RPC needed */
+  const makerRecipientKey = address ? (p2trAddressToKeyHex(address) ?? '') : '';
 
   // ── Token metadata ────────────────────────────────────────────────────────
   const [tokenDecimals, setTokenDecimals] = useState(8);
@@ -66,6 +64,17 @@ export default function CreateOfferPage() {
   })();
   const btcSatsRaw = (() => {
     try { return parseBtcToSats(btcValue); } catch { return 0n; }
+  })();
+
+  // Live dust validation — null means OK, string means blocked
+  const feeDustError = (() => {
+    if (btcSatsRaw === 0n) return null;
+    if (btcSatsRaw < DUST_THRESHOLD) return `Price below dust threshold (min ${DUST_THRESHOLD} sats).`;
+    const feeSats = btcSatsRaw * BigInt(PLATFORM_FEE_BPS) / 10_000n;
+    if (PLATFORM_FEE_BPS > 0 && feeSats < DUST_THRESHOLD) {
+      return `Platform fee (${feeSats} sats) below dust threshold. Increase price to at least ${DUST_THRESHOLD * 10_000n / BigInt(PLATFORM_FEE_BPS)} sats.`;
+    }
+    return null;
   })();
 
   // ── NFT contract address persistence ─────────────────────────────────────
@@ -89,64 +98,57 @@ export default function CreateOfferPage() {
   // ── Auto-fetch decimals when address typed manually ───────────────────────
   useEffect(() => {
     if (!tokenAddress || mode !== 'op20') return;
+    let cancelled = false;
     const t = setTimeout(async () => {
       try {
         const info = await fetchTokenInfo(tokenAddress);
-        setTokenDecimals(info.decimals);
-        setTokenMeta({ name: info.name, symbol: info.symbol });
-      } catch { /* keep defaults */ }
+        if (!cancelled) {
+          setTokenDecimals(info.decimals);
+          setTokenMeta({ name: info.name, symbol: info.symbol });
+        }
+      } catch { /* keep defaults — metadata failure must never block create flow */ }
     }, 800);
-    return () => clearTimeout(t);
+    return () => { cancelled = true; clearTimeout(t); };
   }, [tokenAddress, mode]);
 
-  // ── Resolve payout address → tweaked pubkey ──────────────────────────────
-  // Connected wallet: skip RPC — key is embedded in the bech32m address (signer path).
-  // External address: call getPublicKeysInfoRaw with a 600ms debounce.
+  // ── OP-20 allowance pre-check ─────────────────────────────────────────────
+  // Debounced (600 ms) to avoid RPC spam on every keystroke of the amount field.
+  // Resets to idle from approve_confirmed in BOTH cases:
+  //   - no-txid sufficient-skip (approveTxid === null)
+  //   - real approve tx confirmed (approveTxid !== null) but user increased amount above allowance
+  const flowStateRef = useRef(flow.state);
+  flowStateRef.current = flow.state;
+
   useEffect(() => {
-    const addr = payoutAddress.trim();
+    if (mode !== 'op20' || !tokenAddress || !address || tokenAmountRaw === 0n) return;
+    if (tokenAddress.length < 10) return; // ignore obviously partial/invalid addresses
 
-    if (!addr) {
-      setMakerRecipientKey('');
-      setPayoutResolved(false);
-      setPayoutResolveError(null);
-      return;
-    }
-
-    // Format check: must be a P2TR bech32m (witness v1). bc1q/tb1q are P2WPKH (v0).
-    const quickKey = p2trAddressToKeyHex(addr);
-    if (quickKey === null) {
-      setMakerRecipientKey('');
-      setPayoutResolved(false);
-      setPayoutResolveError('Must be a P2TR address: opt1p…, bc1p…, or tb1p…');
-      return;
-    }
-
-    setPayoutResolveError(null);
-
-    // Connected wallet — use the key encoded in the address directly (no RPC needed)
-    if (address && addr === address.trim()) {
-      setMakerRecipientKey(quickKey);
-      setPayoutResolved(true);
-      return;
-    }
-
-    // External address — resolve via RPC with debounce
-    setPayoutResolving(true);
-    setPayoutResolved(false);
+    let cancelled = false;
     const t = setTimeout(async () => {
       try {
-        const key = await resolveTweakedPubkey(addr);
-        setMakerRecipientKey(key ?? quickKey); // fall back to manual decode if RPC has no record
-        setPayoutResolved(true);
-      } catch {
-        setMakerRecipientKey(quickKey);
-        setPayoutResolved(true);
-      } finally {
-        setPayoutResolving(false);
-      }
+        const allowance = await fetchAllowance(tokenAddress, address, CONTRACT_ADDRESS);
+        if (cancelled) return;
+        const sufficient = allowance >= tokenAmountRaw;
+        console.log('[create] allowance pre-check', {
+          token: tokenAddress,
+          owner: address,
+          spender: CONTRACT_ADDRESS,
+          allowance: allowance.toString(),
+          required: tokenAmountRaw.toString(),
+          sufficient,
+        });
+        const { phase } = flowStateRef.current;
+        if (sufficient && ['idle', 'approve_failed'].includes(phase)) {
+          flow.setApproveSufficient();
+        } else if (!sufficient && phase === 'approve_confirmed') {
+          // Amount now exceeds allowance — regardless of whether approve was skipped
+          // or a real tx confirmed. User must re-approve for the new amount.
+          flow.reset();
+        }
+      } catch { /* pre-check failure is non-blocking — user can still approve manually */ }
     }, 600);
-    return () => clearTimeout(t);
-  }, [payoutAddress, address]); // eslint-disable-line react-hooks/exhaustive-deps
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [tokenAddress, tokenAmountRaw, address, mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Resume draft on mount (once) ─────────────────────────────────────────
   useEffect(() => {
@@ -160,10 +162,6 @@ export default function CreateOfferPage() {
     setTokenAmountHuman(draft.tokenAmountHuman);
     setTokenId(draft.tokenId);
     setBtcValue(draft.btcValue);
-    // Restore payout address for display; set the resolved key directly to skip RPC
-    setPayoutAddress(draft.payoutAddress ?? draft.makerRecipientKey);
-    setMakerRecipientKey(draft.makerRecipientKey);
-    setPayoutResolved(!!draft.makerRecipientKey);
     setAllowedTaker(draft.allowedTaker);
     setTokenDecimals(draft.tokenDecimals);
     // Resume flow — no confirmFn on resume (receipt-only is fine; tx likely already confirmed)
@@ -179,12 +177,26 @@ export default function CreateOfferPage() {
     if (flow.state.phase === 'create_confirmed') clearCreateDraft();
   }, [flow.state.phase]);
 
+  // ── Warn before unload when a tx has been broadcast ───────────────────────
+  // A broadcast tx can still confirm even after the tab closes, but the user
+  // won't see the result and will lose their draft state. Show the browser's
+  // native "Leave site?" dialog so they don't close accidentally.
+  useEffect(() => {
+    const hasBroadcastTx =
+      flow.state.approveTxid !== null || flow.state.createTxid !== null;
+    const isDone = flow.state.phase === 'create_confirmed';
+    if (!hasBroadcastTx || isDone) return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [flow.state.approveTxid, flow.state.createTxid, flow.state.phase]);
+
   // ── Auto-redirect when offer confirmed (also save timestamp) ─────────────
   useEffect(() => {
     if (flow.state.phase === 'create_confirmed' && flow.state.offerId != null) {
       saveListingTimestamp(flow.state.offerId);
       const t = setTimeout(
-        () => router.push(`/offer/${flow.state.offerId!.toString()}`),
+        () => router.push(`/listing/${flow.state.offerId!.toString()}`),
         2000,
       );
       return () => clearTimeout(t);
@@ -193,13 +205,17 @@ export default function CreateOfferPage() {
 
   // ── Validation ────────────────────────────────────────────────────────────
   const validate = (): string | null => {
+    if (!CONTRACT_ADDRESS) return 'Contract address not configured — check NEXT_PUBLIC_CONTRACT_ADDRESS in .env.local';
     if (!tokenAddress) return 'Token address is required';
     if (mode === 'op20' && tokenAmountRaw === 0n) return 'Token amount is required';
     if (mode === 'op721' && !tokenId) return 'Token ID is required';
     if (btcSatsRaw === 0n) return 'BTC price is required';
-    if (!payoutAddress) return 'Payout BTC address is required';
-    if (!makerRecipientKey || payoutResolving) return 'Payout address is still resolving — please wait a moment';
-    if (payoutResolveError) return payoutResolveError;
+    if (btcSatsRaw < DUST_THRESHOLD) return `Output below dust threshold (${DUST_THRESHOLD} sats minimum). Increase price.`;
+    const feeSats = btcSatsRaw * BigInt(PLATFORM_FEE_BPS) / 10_000n;
+    if (PLATFORM_FEE_BPS > 0 && feeSats < DUST_THRESHOLD) {
+      return `Output below dust threshold (${DUST_THRESHOLD} sats minimum). Increase price.`;
+    }
+    if (!makerRecipientKey) return 'Wallet not connected — connect your wallet to continue';
     if (allowedTaker) {
       try {
         normalizeToHex32(allowedTaker);
@@ -230,12 +246,6 @@ export default function CreateOfferPage() {
       PLATFORM_FEE_BPS,
       taker,
     ];
-  };
-
-  // ── Fill payout address from connected wallet (skips RPC — signer path) ──
-  const handleUseConnectedWallet = () => {
-    if (!address) { void connect(); return; }
-    setPayoutAddress(address); // resolve effect detects this === connected wallet → no RPC
   };
 
   // ── NFT picker ────────────────────────────────────────────────────────────
@@ -269,6 +279,23 @@ export default function CreateOfferPage() {
     if (err) { setError(err); return; }
     if (!address) { await connect(); return; }
 
+    // Guard: re-check allowance synchronously before sending approve tx.
+    // If already sufficient, skip the tx entirely — no unnecessary approvals.
+    if (mode === 'op20') {
+      try {
+        const currentAllowance = await fetchAllowance(tokenAddress, address, CONTRACT_ADDRESS);
+        console.log('[create] handleApprove pre-send check', {
+          allowance: currentAllowance.toString(),
+          required: tokenAmountRaw.toString(),
+          sufficient: currentAllowance >= tokenAmountRaw,
+        });
+        if (currentAllowance >= tokenAmountRaw) {
+          flow.setApproveSufficient();
+          return;
+        }
+      } catch { /* check failed — proceed with approve tx */ }
+    }
+
     flow.setApproveSimulating();
     try {
       const simulation = mode === 'op20'
@@ -283,20 +310,41 @@ export default function CreateOfferPage() {
         network: OP_NETWORK,
       });
 
-      // For OP-20: confirm only when allowance is provably on-chain.
-      // This prevents premature green state caused by OPNet returning a receipt
-      // before the allowance storage is actually settled.
+      // Confirm only when the on-chain approval state is actually true.
+      // OP-20: allowance >= required amount.
+      // OP-721: getApproved(tokenId) === escrow OR isApprovedForAll(owner, escrow).
+      // Neither advances to green until the real on-chain check passes.
+      console.log('[create] building confirmFn', {
+        mode,
+        tokenAddress,
+        operator: CONTRACT_ADDRESS,
+        tokenId: mode === 'op721' ? tokenId : undefined,
+        required: mode === 'op20' ? tokenAmountRaw.toString() : undefined,
+      });
       const confirmFn = mode === 'op20'
         ? async () => {
-            const allowed = await fetchAllowance(tokenAddress, address, CONTRACT_ADDRESS);
-            return allowed >= tokenAmountRaw;
+            const allowance = await fetchAllowance(tokenAddress, address, CONTRACT_ADDRESS);
+            const ok = allowance >= tokenAmountRaw;
+            console.log('[create] confirmFn result', {
+              ok,
+              allowance: allowance.toString(),
+              required: tokenAmountRaw.toString(),
+            });
+            return ok;
           }
-        : undefined; // OP-721: receipt-only fallback with auto-advance
+        : async () => {
+            try {
+              return await fetchNftApproval(tokenAddress, BigInt(tokenId), CONTRACT_ADDRESS, address);
+            } catch (err) {
+              console.warn('[create] NFT confirmFn caught unexpected error — returning false', err);
+              return false;
+            }
+          };
 
       flow.setApprovePending(tx.transactionId, confirmFn);
       saveCreateDraft({
         mode, tokenAddress, tokenAmountHuman, tokenId, btcValue,
-        payoutAddress, makerRecipientKey, allowedTaker, tokenDecimals,
+        makerRecipientKey, allowedTaker, tokenDecimals,
         phase: 'approve_pending',
         approveTxid: tx.transactionId,
         createTxid: null,
@@ -346,7 +394,7 @@ export default function CreateOfferPage() {
       flow.setCreatePending(tx.transactionId, predictedOfferId);
       saveCreateDraft({
         mode, tokenAddress, tokenAmountHuman, tokenId, btcValue,
-        payoutAddress, makerRecipientKey, allowedTaker, tokenDecimals,
+        makerRecipientKey, allowedTaker, tokenDecimals,
         phase: 'create_pending',
         approveTxid: flow.state.approveTxid ?? '',
         createTxid: tx.transactionId,
@@ -380,6 +428,12 @@ export default function CreateOfferPage() {
 
       <div className="max-w-xl mx-auto space-y-6">
         <div>
+          <a
+            href="/assets"
+            className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-white transition-colors mb-3"
+          >
+            ← All Assets
+          </a>
           <h1 className="text-2xl font-bold text-white">Create Listing</h1>
           <p className="text-sm text-slate-400 mt-1">
             Escrow OP-20 tokens or an OP-721 NFT in exchange for BTC.
@@ -444,7 +498,7 @@ export default function CreateOfferPage() {
                 Token amount
                 {tokenMeta && (
                   <span className="text-slate-500 ml-1 font-normal text-xs">
-                    · {tokenMeta.symbol} ({tokenDecimals} dec.)
+                    · ${tokenMeta.symbol}
                   </span>
                 )}
               </label>
@@ -470,11 +524,6 @@ export default function CreateOfferPage() {
                   Select from wallet
                 </button>
               </div>
-              {tokenAmountRaw > 0n && (
-                <p className="text-xs text-slate-500 mt-1">
-                  = {tokenAmountRaw.toLocaleString()} raw
-                </p>
-              )}
               {/* Percentage shortcuts — only when balance is known */}
               {tokenBalance !== null && (
                 <div className="flex gap-1.5 mt-2">
@@ -547,75 +596,37 @@ export default function CreateOfferPage() {
             )}
           </div>
 
-          {/* Payout BTC address */}
+          {/* Platform fee — fixed, not user-configurable */}
           <div>
-            <div className="flex items-center justify-between mb-1">
-              <label htmlFor="payout-addr" className="mb-0">
-                Payout BTC address
-              </label>
-              {address && (
-                <button
-                  type="button"
-                  onClick={handleUseConnectedWallet}
-                  className="text-xs text-brand hover:underline shrink-0 ml-2"
-                >
-                  Use connected wallet
-                </button>
-              )}
-            </div>
-            <div className="relative">
-              <input
-                id="payout-addr"
-                type="text"
-                placeholder="opt1p… / bc1p… / tb1p…"
-                value={payoutAddress}
-                onChange={(e) => setPayoutAddress(e.target.value)}
-                className={`pr-8 ${payoutResolveError ? 'border-red-700/70' : payoutResolved ? 'border-emerald-700/50' : ''}`}
-                required
-              />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                {payoutResolving && (
-                  <span className="text-slate-500 text-xs animate-pulse">…</span>
-                )}
-                {!payoutResolving && payoutResolved && (
-                  <span className="text-emerald-400 text-xs">✓</span>
+            <div className={`flex items-center justify-between rounded-lg bg-surface px-4 py-3 border ${feeDustError ? 'border-red-700' : 'border-surface-border'}`}>
+              <span className="text-sm text-slate-400">Platform fee</span>
+              <span className="text-sm font-semibold text-white">
+                0.5%
+                {btcSatsRaw > 0n && (
+                  <span className="text-xs text-slate-500 font-normal ml-2">
+                    = {Math.ceil(Number(btcSatsRaw) * PLATFORM_FEE_BPS / 10_000).toLocaleString()} sats
+                  </span>
                 )}
               </span>
             </div>
-            {payoutResolveError && (
-              <p className="text-xs text-red-400 mt-1">{payoutResolveError}</p>
+            {feeDustError && (
+              <p className="text-xs text-red-400 mt-1.5 px-1">{feeDustError}</p>
             )}
-            <p className="text-xs text-slate-600 mt-1">
-              Where you receive BTC when the offer is filled.
-            </p>
           </div>
 
-          {/* Platform fee — fixed, not user-configurable */}
-          <div className="flex items-center justify-between rounded-lg bg-surface px-4 py-3 border border-surface-border">
-            <span className="text-sm text-slate-400">Platform fee</span>
-            <span className="text-sm font-semibold text-white">
-              0.5%
-              {btcSatsRaw > 0n && (
-                <span className="text-xs text-slate-500 font-normal ml-2">
-                  = {Math.ceil(Number(btcSatsRaw) * PLATFORM_FEE_BPS / 10_000).toLocaleString()} sats
-                </span>
-              )}
-            </span>
-          </div>
-
-          {/* OTC restriction */}
+          {/* Private buyer */}
           <div>
             <label htmlFor="allowed-taker">
-              Allowed taker (optional — blank = public offer)
+              Private buyer (optional)
             </label>
             <input
               id="allowed-taker"
-              placeholder="opt1p… / tb1p… / 0x… (leave blank for public)"
+              placeholder="opt1p… / tb1p… / 0x… — leave blank for public offer"
               value={allowedTaker}
               onChange={(e) => setAllowedTaker(e.target.value)}
             />
             <p className="text-xs text-slate-500 mt-1">
-              Enter a P2TR address or 0x hex key to restrict to one specific taker.
+              Only this address can fill the offer. Leave blank to allow anyone.
             </p>
           </div>
 
@@ -626,6 +637,16 @@ export default function CreateOfferPage() {
             </p>
           )}
 
+          {/* Don't-close warning — shown once a tx has been broadcast */}
+          {(flow.state.approveTxid !== null || flow.state.createTxid !== null) &&
+           flow.state.phase !== 'create_confirmed' && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-700/40 bg-amber-900/10 px-3 py-2.5">
+              <p className="text-xs text-amber-400/80 leading-relaxed">
+                Keep this tab open — closing it will require you to recreate the listing.
+              </p>
+            </div>
+          )}
+
           {/* Transaction progress */}
           <TxProgress
             state={flow.state}
@@ -633,28 +654,12 @@ export default function CreateOfferPage() {
             onApprove={handleApprove}
             onCreate={handleCreate}
             onReset={() => { clearCreateDraft(); flow.reset(); }}
-            onSkipApprove={flow.forceApproveConfirmed}
             onCheckApproveStatus={() => void flow.checkApproveStatus()}
             onCheckCreateStatus={() => void flow.checkCreateStatus()}
+            onRetryCreate={flow.retryCreate}
+            disabled={!!feeDustError}
           />
 
-          {/* Debug info */}
-          <details className="border border-surface-border rounded-lg text-xs">
-            <summary className="cursor-pointer p-3 text-slate-500 hover:text-slate-300 select-none">
-              Debug info
-            </summary>
-            <div className="px-3 pb-3 pt-1 space-y-1 font-mono text-slate-400">
-              <p>provider: <span className="text-slate-300">{provider}</span></p>
-              <p>network: <span className="text-slate-300">{OP_NETWORK_NAME}</span></p>
-              <p>contract: <span className="text-slate-300 break-all">{CONTRACT_ADDRESS || '(not set)'}</span></p>
-              <p>mode: <span className="text-slate-300">{mode}</span></p>
-              <p>wallet: <span className="text-slate-300 break-all">{address || '(not connected)'}</span></p>
-              <p>tx phase: <span className="text-slate-300">{flow.state.phase}</span></p>
-              <p>token decimals: <span className="text-slate-300">{tokenDecimals}</span></p>
-              <p>tokenAmountRaw: <span className="text-slate-300">{tokenAmountRaw.toString()}</span></p>
-              <p>btcSatsRaw: <span className="text-slate-300">{btcSatsRaw.toString()}</span></p>
-            </div>
-          </details>
         </form>
       </div>
     </>

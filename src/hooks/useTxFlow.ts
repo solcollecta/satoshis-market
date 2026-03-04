@@ -15,10 +15,10 @@
  *   predictedOfferId. `clearTxPoll(txid)` fully removes the entry on success or reset.
  *
  * Approve polling (two modes):
- *   - confirmFn provided (OP-20): polls confirmFn() every POLL_MS as the primary
- *     signal (e.g. allowance >= required). Also checks receipt as secondary.
- *     NO auto-advance timeout — only real on-chain state drives confirmation.
- *   - no confirmFn (OP-721): receipt-only, auto-advances after APPROVE_AUTO_S seconds.
+ *   - confirmFn provided (OP-20 and OP-721): polls confirmFn() every POLL_MS as the
+ *     PRIMARY and ONLY signal. Receipt alone CANNOT advance to approve_confirmed.
+ *     green = on-chain truth, nothing else.
+ *   - no confirmFn: receipt-only, auto-advances after APPROVE_AUTO_S seconds.
  *
  * Create polling:
  *   Calls getOffer(predictedOfferId) every POLL_MS until the offer appears on-chain.
@@ -51,7 +51,8 @@ export interface TxFlowState {
 }
 
 const POLL_MS = 5_000;
-const APPROVE_AUTO_S = 90;
+/** After this many seconds with no receipt, show "taking longer than usual" in the UI. */
+export const APPROVE_SLOW_S = 90;
 const CREATE_TIMEOUT_S = 1800; // 30 minutes
 
 /** Per-transaction polling state — one entry per submitted txid. */
@@ -174,7 +175,9 @@ export function useTxFlow() {
 
       const elapsedS = Math.floor((Date.now() - e.startTs) / 1000);
 
-      // Primary: custom on-chain confirmation (e.g. allowance check for OP-20).
+      // When confirmFn exists: it is the SOLE arbiter of approval.
+      // Receipt alone MUST NOT advance state — a receipt only proves the tx landed,
+      // not that the on-chain approval state (allowance / NFT approved) is correct.
       if (e.confirmFn) {
         try {
           const onChain = await e.confirmFn();
@@ -184,23 +187,39 @@ export function useTxFlow() {
             clearTxPoll(txid);
             if (activeApproveRef.current === txid) activeApproveRef.current = null;
             removePendingTx(txid);
+            console.log('[useTxFlow] → approve_confirmed', {
+              path: 'confirmFn',
+              txid,
+              confirmFnPresent: true,
+              receiptChecked: false,
+              elapsed: elapsedS,
+            });
             setState(s => {
               if (s.approveTxid !== txid) return s;
               return { ...s, phase: 'approve_confirmed' };
             });
-            return;
           }
         } catch { /* keep polling */ }
+        // confirmFn path ends here — NEVER fall through to receipt check.
+        return;
       }
 
-      // Secondary: receipt-based fast path (also sole signal for OP-721).
-      const receiptOk = await checkTxConfirmed(txid);
+      // No confirmFn: receipt is the only signal. No auto-advance on timeout —
+      // confirmed must be on-chain truth (receipt), never time-based.
+      const receiptOk = await checkTxConfirmed(txid).catch(() => false);
       if (!txPollsRef.current.get(txid)?.pollId) return;
 
-      if (receiptOk || (!e.confirmFn && elapsedS >= APPROVE_AUTO_S)) {
+      if (receiptOk === true) {
         clearTxPoll(txid);
         if (activeApproveRef.current === txid) activeApproveRef.current = null;
         removePendingTx(txid);
+        console.log('[useTxFlow] → approve_confirmed', {
+          path: 'receipt',
+          txid,
+          confirmFnPresent: false,
+          receiptOk: true,
+          elapsed: elapsedS,
+        });
         setState(s => {
           if (s.approveTxid !== txid) return s;
           return { ...s, phase: 'approve_confirmed' };
@@ -209,16 +228,17 @@ export function useTxFlow() {
     }, POLL_MS);
   }, [clearTxPoll]);
 
-  /** Manual "I confirmed it, skip the wait" button. */
-  const forceApproveConfirmed = useCallback(() => {
-    const txid = activeApproveRef.current;
-    if (txid) {
-      clearTxPoll(txid);
-      removePendingTx(txid);
-      activeApproveRef.current = null;
-    }
-    setState(s => ({ ...s, phase: 'approve_confirmed' }));
-  }, [clearTxPoll]);
+  /**
+   * Transition directly to approve_confirmed without sending an approve tx.
+   * Used when a pre-check shows the existing on-chain allowance is already >= required.
+   * Only transitions from idle or approve_failed — never overrides an in-flight tx.
+   */
+  const setApproveSufficient = useCallback(() => {
+    setState(s => {
+      if (!['idle', 'approve_failed'].includes(s.phase)) return s;
+      return { ...s, phase: 'approve_confirmed', approveTxid: null, error: null };
+    });
+  }, []);
 
   // ── Create phase ──────────────────────────────────────────────────────────
 
@@ -319,23 +339,32 @@ export function useTxFlow() {
     // Entry may have intervals stopped (failed state) but confirmFn is still readable.
     const entry = txPollsRef.current.get(txid);
 
+    // When confirmFn exists: it is the SOLE arbiter — do NOT fall back to receipt.
     if (entry?.confirmFn) {
       try {
         const onChain = await entry.confirmFn();
         if (onChain) {
           removePendingTx(txid);
+          console.log('[useTxFlow] checkApproveStatus → approve_confirmed', {
+            path: 'confirmFn',
+            txid,
+          });
           setState(s => {
             if (s.approveTxid !== txid) return s;
             return { ...s, phase: 'approve_confirmed' };
           });
-          return;
         }
-      } catch { /* keep waiting */ }
+      } catch { /* not confirmed yet — no state change */ }
+      return; // never fall through to receipt when confirmFn exists
     }
 
     const receiptOk = await checkTxConfirmed(txid).catch(() => false);
-    if (receiptOk) {
+    if (receiptOk === true) {
       removePendingTx(txid);
+      console.log('[useTxFlow] checkApproveStatus → approve_confirmed', {
+        path: 'receipt',
+        txid,
+      });
       setState(s => {
         if (s.approveTxid !== txid) return s;
         return { ...s, phase: 'approve_confirmed' };
@@ -344,8 +373,9 @@ export function useTxFlow() {
   }, []);
 
   /**
-   * One-shot create status check — safe to call from create_failed.
+   * One-shot create status check — safe to call from both create_pending and create_failed.
    * Checks if the predicted offer already exists on-chain.
+   * Clears the poll interval on success so it stops running.
    */
   const checkCreateStatus = useCallback(async () => {
     const txid = activeCreateRef.current;
@@ -357,6 +387,8 @@ export function useTxFlow() {
       const offer = await getOffer(entry.predictedOfferId);
       if (offer !== null) {
         const pid = entry.predictedOfferId;
+        clearTxPoll(txid);
+        if (activeCreateRef.current === txid) activeCreateRef.current = null;
         removePendingTx(txid);
         setState(s => {
           if (s.createTxid !== txid) return s;
@@ -364,7 +396,23 @@ export function useTxFlow() {
         });
       }
     } catch { /* still pending */ }
-  }, []);
+  }, [clearTxPoll]);
+
+  // ── Retry (no-broadcast failures) ────────────────────────────────────────
+
+  /**
+   * Go back to approve_confirmed without re-approving.
+   * Called when the create tx was never broadcast (wallet rejected, simulation
+   * reverted) — the approval is still valid so the user just retries create.
+   */
+  const retryCreate = useCallback(() => {
+    if (activeCreateRef.current) {
+      clearTxPoll(activeCreateRef.current);
+      removePendingTx(activeCreateRef.current);
+      activeCreateRef.current = null;
+    }
+    setState(s => ({ ...s, phase: 'approve_confirmed', createTxid: null, error: null, elapsed: 0 }));
+  }, [clearTxPoll]);
 
   // ── Reset ─────────────────────────────────────────────────────────────────
 
@@ -388,12 +436,13 @@ export function useTxFlow() {
     setApproveSimulating,
     setApproveFailed,
     setApprovePending,
-    forceApproveConfirmed,
+    setApproveSufficient,
     setCreateSimulating,
     setCreateFailed,
     setCreatePending,
     checkApproveStatus,
     checkCreateStatus,
+    retryCreate,
     reset,
   };
 }

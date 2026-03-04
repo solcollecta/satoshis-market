@@ -8,18 +8,18 @@ import { CollectionCard } from '@/components/CollectionCard';
 import type { CollectionSummary } from '@/components/CollectionCard';
 import { AssetNav } from '@/components/AssetNav';
 
-function buildCollections(offers: Offer[]): CollectionSummary[] {
+function buildTokens(offers: Offer[]): CollectionSummary[] {
   const map = new Map<string, CollectionSummary>();
 
   for (const offer of offers) {
-    if (!offer.isNFT) continue;
+    if (offer.isNFT) continue;
     const existing = map.get(offer.token);
     const isOpen = offer.status === 1;
 
     if (!existing) {
       map.set(offer.token, {
         address: offer.token,
-        isNFT: true,
+        isNFT: false,
         floorSats: isOpen ? offer.btcSatoshis : 9999999999999n,
         openListings: isOpen ? 1 : 0,
         totalListings: 1,
@@ -40,7 +40,7 @@ function buildCollections(offers: Offer[]): CollectionSummary[] {
     .sort((a, b) => b.openListings - a.openListings);
 }
 
-export default function CollectionsPage() {
+export default function TokensPage() {
   const [offers, setOffers] = useState<Offer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -60,13 +60,13 @@ export default function CollectionsPage() {
 
   useEffect(() => { void load(); }, []);
 
-  const allCollections = useMemo(() => buildCollections(offers), [offers]);
+  const allTokens = useMemo(() => buildTokens(offers), [offers]);
 
-  const collections = useMemo(() => {
+  const tokens = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return allCollections;
-    return allCollections.filter((c) => c.address.toLowerCase().includes(q));
-  }, [allCollections, search]);
+    if (!q) return allTokens;
+    return allTokens.filter((c) => c.address.toLowerCase().includes(q));
+  }, [allTokens, search]);
 
   return (
     <div className="space-y-8">
@@ -75,9 +75,9 @@ export default function CollectionsPage() {
       <div className="flex items-start justify-between gap-4 pt-2 flex-wrap">
         <div>
           <AssetNav />
-          {!loading && allCollections.length > 0 && (
+          {!loading && allTokens.length > 0 && (
             <p className="mt-1.5 text-xs text-slate-500">
-              <span className="text-white font-semibold">{allCollections.length}</span> collection{allCollections.length !== 1 ? 's' : ''}
+              <span className="text-white font-semibold">{allTokens.length}</span> token{allTokens.length !== 1 ? 's' : ''}
             </p>
           )}
         </div>
@@ -119,18 +119,18 @@ export default function CollectionsPage() {
       )}
 
       {/* Grid */}
-      {!loading && collections.length > 0 && (
+      {!loading && tokens.length > 0 && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {collections.map((c) => (
+          {tokens.map((c) => (
             <CollectionCard key={c.address} collection={c} />
           ))}
         </div>
       )}
 
       {/* No results */}
-      {!loading && collections.length === 0 && allCollections.length > 0 && (
+      {!loading && tokens.length === 0 && allTokens.length > 0 && (
         <div className="card text-center py-12 text-slate-500">
-          <p className="font-semibold">No collections match your search</p>
+          <p className="font-semibold">No tokens match your search</p>
           <button
             type="button"
             onClick={() => setSearch('')}
@@ -142,10 +142,10 @@ export default function CollectionsPage() {
       )}
 
       {/* Empty state */}
-      {!loading && allCollections.length === 0 && !error && (
+      {!loading && allTokens.length === 0 && !error && (
         <div className="card text-center py-20 text-slate-600">
-          <span className="text-5xl mb-4 block opacity-20">🖼</span>
-          <p className="font-semibold text-slate-400">No NFT collections yet</p>
+          <span className="text-5xl mb-4 block opacity-20">🪙</span>
+          <p className="font-semibold text-slate-400">No OP-20 tokens yet</p>
           <p className="text-sm mt-2">
             <Link href="/create" className="text-brand hover:underline">
               Create the first listing →

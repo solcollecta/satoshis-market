@@ -40,8 +40,7 @@ export function CollectionCard({ collection }: Props) {
   }, [collection.address, collection.isNFT]);
 
   const displayName = name
-    ?? (collection.isNFT ? 'NFT Collection' : 'Token')
-    + ' ' + collection.address.slice(0, 6) + '…';
+    ?? ((collection.isNFT ? 'NFT Collection' : 'Token') + ' ' + collection.address.slice(0, 6) + '…');
 
   const bgSrc = banner && !bannerError ? banner : (icon && !imgError ? icon : null);
 
@@ -84,8 +83,10 @@ export function CollectionCard({ collection }: Props) {
       {/* Info */}
       <div className="p-4 flex flex-col gap-3">
         <div>
-          <p className="text-sm font-semibold text-white truncate">{displayName}</p>
-          <p className="text-[11px] text-slate-600 font-mono truncate mt-0.5">
+          <p className="text-sm font-semibold text-white truncate">
+            {!collection.isNFT && name ? `$${displayName}` : displayName}
+          </p>
+          <p className="text-[11px] text-slate-500 font-mono truncate mt-0.5">
             {collection.address.slice(0, 14)}…
           </p>
         </div>
@@ -113,7 +114,7 @@ export function CollectionCard({ collection }: Props) {
 
         {/* Hover CTA */}
         <p className="text-[11px] text-brand opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-right">
-          View collection →
+          {collection.isNFT ? 'View collection →' : 'View listings →'}
         </p>
       </div>
     </Link>

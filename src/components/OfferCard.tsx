@@ -1,17 +1,22 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import type { Offer } from '@/types/offer';
 import { OFFER_STATUS } from '@/types/offer';
+import { QuickBuyModal } from './QuickBuyModal';
 import {
   formatBtcFromSats,
   shortAddr,
   fetchNftCollectionInfo,
   fetchTokenInfo,
+  hex32ToP2TRAddress,
+  keyToHex,
   type NftCollectionInfo,
 } from '@/lib/opnet';
+import { CopyableAddress } from './CopyableAddress';
 import { formatRelativeTime, formatTokenCompact } from '@/lib/tokens';
+import { useWallet } from '@/context/WalletContext';
 
 // ── Status style map ──────────────────────────────────────────────────────────
 
@@ -76,7 +81,17 @@ function NftImage({ icon, name, loaded }: { icon?: string; name?: string; loaded
 // ── Card ─────────────────────────────────────────────────────────────────────
 
 export function OfferCard({ offer, createdAt }: Props) {
+  const router = useRouter();
+  const { address } = useWallet();
   const statusClass = STATUS_STYLES[offer.status] ?? STATUS_STYLES[0];
+  const [buyOpen, setBuyOpen] = useState(false);
+  const isOpen = offer.status === 1;
+
+  const isSeller = (() => {
+    if (!address) return false;
+    try { return address.toLowerCase() === hex32ToP2TRAddress(keyToHex(offer.btcRecipientKey)).toLowerCase(); }
+    catch { return false; }
+  })();
 
   // NFT: collection icon + name
   const [collection, setCollection] = useState<NftCollectionInfo | null>(null);
@@ -99,21 +114,18 @@ export function OfferCard({ offer, createdAt }: Props) {
 
   const nftLabel   = `${collection?.name ?? 'NFT'} #${offer.tokenId.toString()}`;
   const amountStr  = tokenMeta
-    ? `${formatTokenCompact(offer.tokenAmount, tokenMeta.decimals)} ${tokenMeta.symbol}`
+    ? `${formatTokenCompact(offer.tokenAmount, tokenMeta.decimals)} $${tokenMeta.symbol}`
     : null;
 
   return (
-    <Link
-      href={`/offer/${offer.id.toString()}`}
-      className="group flex flex-col bg-surface-card border border-surface-border rounded-2xl overflow-hidden hover:border-surface-bright transition-all duration-200 hover:shadow-[0_8px_40px_rgba(0,0,0,0.4)]"
-    >
+    <>
+    {buyOpen && <QuickBuyModal offer={offer} onClose={() => setBuyOpen(false)} />}
+    <div className="flex flex-col bg-surface-card border border-surface-border rounded-2xl overflow-hidden transition-colors duration-200 hover:border-surface-bright">
+
       {/* Visual area */}
       {offer.isNFT ? (
-        <div className="relative px-4 pt-4">
+        <div className="px-4 pt-4">
           <NftImage icon={collection?.icon} name={nftLabel} loaded={colLoaded} />
-          <span className={`absolute top-7 right-7 text-[10px] font-semibold px-2 py-0.5 rounded-full ${statusClass}`}>
-            {OFFER_STATUS[offer.status] ?? 'Unknown'}
-          </span>
         </div>
       ) : (
         <div className="px-4 pt-4">
@@ -143,54 +155,96 @@ export function OfferCard({ offer, createdAt }: Props) {
               </p>
             ) : (
               <p className="text-sm font-semibold text-white truncate">
-                {tokenMeta?.symbol ?? <span className="text-slate-600 text-xs">OP-20 Token</span>}
+                {tokenMeta?.symbol ? `$${tokenMeta.symbol}` : <span className="text-slate-600 text-xs">OP-20 Token</span>}
               </p>
             )}
-            <p className="text-[11px] text-slate-600 font-mono truncate mt-0.5">
-              {shortAddr(offer.token)}
-            </p>
+            <CopyableAddress
+              full={offer.token}
+              display={shortAddr(offer.token)}
+              className="text-[11px] text-slate-600 truncate mt-0.5"
+            />
           </div>
-          {!offer.isNFT && (
-            <span className={`shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full ${statusClass}`}>
+          <div className="flex items-center gap-1 shrink-0">
+            {isSeller && (
+              <span className="text-[10px] font-bold text-emerald-400 border border-emerald-700/40 bg-emerald-900/20 px-2 py-0.5 rounded-full">
+                Yours
+              </span>
+            )}
+            {offer.allowedTaker !== 0n && (
+              <span className="text-[10px] font-bold text-brand border border-brand/30 px-2 py-0.5 rounded-full">
+                Private
+              </span>
+            )}
+            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${statusClass}`}>
               {OFFER_STATUS[offer.status] ?? 'Unknown'}
             </span>
-          )}
+          </div>
         </div>
 
         {/* Divider */}
         <div className="border-t border-surface-border" />
 
-        {/* Price */}
+        {/* Price + Buy */}
         <div className="flex items-end justify-between">
           <div>
             <p className="text-[10px] font-semibold text-slate-600 uppercase tracking-widest mb-0.5">Price</p>
-            <p className="text-base font-bold text-white font-mono">
+            <p className="text-base font-bold text-white font-mono mb-1.5">
               {formatBtcFromSats(offer.btcSatoshis)}
             </p>
-          </div>
-          {offer.allowedTaker !== 0n && (
-            <span className="text-[10px] font-bold text-brand border border-brand/30 px-2 py-0.5 rounded-full">
-              OTC
-            </span>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-between text-[11px] text-slate-600 mt-auto">
-          <span className="font-mono truncate">{shortAddr(offer.maker)}</span>
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="text-slate-700">{offer.isNFT ? 'OP-721' : 'OP-20'}</span>
-            {createdAt != null && (
-              <span>{formatRelativeTime(createdAt)}</span>
+            {isOpen && !isSeller && (
+              <button
+                type="button"
+                onClick={() => setBuyOpen(true)}
+                className="cursor-pointer text-[11px] font-bold bg-brand text-black px-3 py-1 rounded-lg border border-brand transition-all duration-150 drop-shadow-[0_0_6px_rgba(247,147,26,0.3)] hover:bg-transparent hover:text-brand hover:drop-shadow-[0_0_10px_rgba(247,147,26,0.85)] active:bg-brand active:text-black"
+              >
+                Buy
+              </button>
             )}
           </div>
         </div>
 
-        {/* Hover CTA */}
-        <p className="text-[11px] text-brand opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-right">
-          View details →
-        </p>
+        {/* Footer */}
+        <div className="flex items-center justify-between text-[11px] text-slate-600 mt-auto">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="font-mono text-brand shrink-0">#{offer.id.toString()}</span>
+            <span className="shrink-0">·</span>
+            <span className="shrink-0">Seller</span>
+            {(() => {
+              try {
+                const bech32 = hex32ToP2TRAddress(keyToHex(offer.btcRecipientKey));
+                return (
+                  <CopyableAddress
+                    full={bech32}
+                    display={`${bech32.slice(0, 8)}…${bech32.slice(-5)}`}
+                    className="min-w-0 truncate"
+                  />
+                );
+              } catch {
+                return <span className="font-mono truncate">{shortAddr(offer.maker)}</span>;
+              }
+            })()}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {createdAt != null && (
+              <span>{formatRelativeTime(createdAt)}</span>
+            )}
+            <div className="relative group/dots">
+              <div className="absolute bottom-full right-0 mb-2 px-2.5 py-1 bg-surface-card border border-brand/40 rounded-lg text-[11px] font-bold text-brand tracking-widest whitespace-nowrap opacity-0 group-hover/dots:opacity-100 transition-opacity duration-150 pointer-events-none">
+                View Details
+              </div>
+              <button
+                type="button"
+                onClick={() => router.push(`/listing/${offer.id.toString()}`)}
+                className="cursor-pointer text-slate-600 hover:text-brand hover:drop-shadow-[0_0_8px_rgba(247,147,26,0.9)] px-2 py-0.5 rounded-md transition-all duration-150 text-sm leading-none tracking-widest"
+              >
+                ···
+              </button>
+            </div>
+          </div>
+        </div>
+
       </div>
-    </Link>
+    </div>
+    </>
   );
 }

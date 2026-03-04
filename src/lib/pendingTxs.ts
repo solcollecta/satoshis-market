@@ -59,3 +59,8 @@ export function removePendingTx(txid: string): void {
   if (!txid) return;
   writeRaw(getPendingTxs().filter(t => t.txid !== txid));
 }
+
+/** Clear all pending transactions — call on disconnect or wallet change. */
+export function clearAllPendingTxs(): void {
+  writeRaw([]);
+}

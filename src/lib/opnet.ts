@@ -80,14 +80,23 @@ export function getOpscanTxUrl(txHash: string): string {
 
 /**
  * Best-effort on-chain confirmation check via btc_getTransactionReceipt.
- * Returns true when the receipt has a blockNumber (= confirmed).
- * Returns false on any error or when the RPC method is unsupported.
  *
- * Exported so useTxFlow and useFillFlow can share one implementation.
+ * Returns:
+ *   true             — receipt found with blockNumber (confirmed)
+ *   false            — receipt not found or not yet confirmed (keep polling)
+ *   'rpc_unavailable' — proxy returned 502/503 (upstream unreachable or not
+ *                       configured). Callers should fall back to offer-state
+ *                       checks rather than treating this as a permanent error.
+ *
+ * Routes through /api/opnet-rpc (same-origin proxy) in the browser.
+ * Falls back to OP_RPC_URL for server-side calls (SSR / build time).
+ *
+ * Exported so useTxFlow, useFillFlow and useCancelFlow share one implementation.
  */
-export async function checkTxConfirmed(txHash: string): Promise<boolean> {
+export async function checkTxConfirmed(txHash: string): Promise<boolean | 'rpc_unavailable'> {
   try {
-    const res = await fetch(OP_RPC_URL, {
+    const url = typeof window !== 'undefined' ? '/api/opnet-rpc' : OP_RPC_URL;
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -97,6 +106,9 @@ export async function checkTxConfirmed(txHash: string): Promise<boolean> {
         params: [txHash],
       }),
     });
+    // 502/503 = our proxy couldn't reach upstream or isn't configured.
+    // Signal this explicitly so callers can skip to offer-state fallbacks.
+    if (res.status === 502 || res.status === 503) return 'rpc_unavailable';
     if (!res.ok) return false;
     const data = await res.json() as { result?: Record<string, unknown> | null };
     return data.result != null && data.result['blockNumber'] != null;
@@ -373,8 +385,16 @@ export async function fetchAllowance(
       resolveAddressArg(spenderAddress),   // works for P2OP contract addresses
     ]);
     const result = await contract.allowance(ownerAddr, spenderAddr);
-    return BigInt(String(result.properties?.allowance ?? 0));
-  } catch {
+    const allowance = BigInt(String(result.properties?.allowance ?? 0));
+    console.log('[fetchAllowance]', {
+      token: tokenAddress,
+      owner: ownerAddress,
+      spender: spenderAddress,
+      allowance: allowance.toString(),
+    });
+    return allowance;
+  } catch (err) {
+    console.warn('[fetchAllowance] error — returning 0n', err);
     return 0n;
   }
 }
@@ -412,6 +432,26 @@ const OP721_APPROVE_ABI: BitcoinInterfaceAbi = [
       { name: 'tokenId', type: ABIDataTypes.UINT256 },
     ],
     outputs: [],
+  },
+];
+
+// ── OP-721 approval-check ABI (view-only: getApproved + isApprovedForAll) ──────
+
+const OP721_APPROVAL_CHECK_ABI: BitcoinInterfaceAbi = [
+  {
+    name: 'getApproved',
+    type: BitcoinAbiTypes.Function,
+    inputs: [{ name: 'tokenId', type: ABIDataTypes.UINT256 }],
+    outputs: [{ name: 'approved', type: ABIDataTypes.ADDRESS }],
+  },
+  {
+    name: 'isApprovedForAll',
+    type: BitcoinAbiTypes.Function,
+    inputs: [
+      { name: 'owner', type: ABIDataTypes.ADDRESS },
+      { name: 'operator', type: ABIDataTypes.ADDRESS },
+    ],
+    outputs: [{ name: 'approved', type: ABIDataTypes.BOOL }],
   },
 ];
 
@@ -629,6 +669,226 @@ export async function simulateNftApprove(
   const operatorAddr = await resolveAddressArg(operator);
   console.log('[simulateNftApprove] token:', tokenAddress, 'operator:', operator, 'tokenId:', tokenId.toString());
   return tokenContract.approve(operatorAddr, tokenId);
+}
+
+/**
+ * Normalize any boolean-like value returned by the OPNet SDK to a plain boolean.
+ *
+ * The SDK may return BOOL-typed ABI outputs as:
+ *   - boolean                → itself
+ *   - bigint / number        → !== 0
+ *   - string                 → "true" / "1" / "yes" → true
+ *   - boxed Boolean object   → .valueOf()
+ *   - wrapper object         → inspect .value / .ok / .result / .data /
+ *                              .isApproved / .approved / .bool fields
+ *   - anything else          → false
+ */
+function normalizeBool(val: unknown): boolean {
+  if (val === null || val === undefined) return false;
+  if (typeof val === 'boolean') return val;
+  if (typeof val === 'bigint')  return val !== 0n;
+  if (typeof val === 'number')  return val !== 0;
+  if (typeof val === 'string') {
+    const s = val.trim().toLowerCase();
+    return s === 'true' || s === '1' || s === 'yes';
+  }
+  if (typeof val === 'object' && val !== null) {
+    // Boxed Boolean (new Boolean(true))
+    if (val instanceof Boolean) return val.valueOf();
+    const obj = val as Record<string, unknown>;
+    // Walk common SDK wrapper field names — first match wins
+    for (const key of ['value', 'bool', 'boolean', 'ok', 'result', 'data', 'isApproved', 'approved']) {
+      if (key in obj) return normalizeBool(obj[key]);
+    }
+    // Last resort: stringify and look for a top-level JSON boolean true
+    try {
+      const s = JSON.stringify(val);
+      if (s === 'true')  return true;
+      if (s === 'false') return false;
+      // Heuristic: any field explicitly set to the JSON boolean true
+      return /:true[,}\]]/.test(s);
+    } catch { /* ignore */ }
+  }
+  return false;
+}
+
+/**
+ * Normalize any address-like value returned by the OPNet SDK to a lowercase
+ * 64-char hex string (no 0x prefix) suitable for direct equality comparison.
+ *
+ * The SDK may return ADDRESS-typed ABI outputs as:
+ *   - string  "0x<64hex>"  → strip 0x, lowercase
+ *   - bigint               → hex-pad to 64 chars
+ *   - Address object       → inspect .address / .value fields
+ *   - null / undefined / 0 → not approved (return null)
+ *
+ * Returns null for zero / empty / unrecognized values so callers can treat
+ * null === "not approved" without further logic.
+ */
+function normalizeApprovedAddress(val: unknown): string | null {
+  if (val === null || val === undefined || val === 0 || val === '') return null;
+
+  if (typeof val === 'bigint') {
+    if (val === 0n) return null;
+    return val.toString(16).padStart(64, '0');
+  }
+
+  if (typeof val === 'string') {
+    const s = val.trim();
+    if (!s || s === '0x') return null;
+    if (s.startsWith('0x') || s.startsWith('0X')) {
+      const hex = s.slice(2).toLowerCase().padStart(64, '0');
+      return /^0+$/.test(hex) ? null : hex;
+    }
+    // Try bech32m decode — accept any witness program (P2TR=32 bytes, P2OP=21 bytes, etc.)
+    // This is used only when comparing bech32m strings to bech32m strings (track B).
+    // For bigint→bigint comparisons (track A) this path is never reached.
+    try {
+      const decoded = bech32m.decode(s, 90);
+      const progBytes = bech32m.fromWords(decoded.words.slice(1));
+      if (progBytes.length >= 20) {
+        const hex = Buffer.from(progBytes).toString('hex').toLowerCase();
+        return /^0+$/.test(hex) ? null : hex;
+      }
+    } catch { /* not a valid bech32m — fall through */ }
+    return null;
+  }
+
+  if (typeof val === 'object' && val !== null) {
+    const obj = val as Record<string, unknown>;
+    // @btc-vision/transaction Address objects expose .address as a string
+    if (typeof obj.address === 'string') return normalizeApprovedAddress(obj.address);
+    // Some SDK versions expose .value as bigint
+    if (typeof obj.value === 'bigint')  return normalizeApprovedAddress(obj.value);
+    if (typeof obj.value === 'string')  return normalizeApprovedAddress(obj.value);
+    // Last resort — if .toString() gives something useful
+    try {
+      const s = String(val);
+      if (s && s !== '[object Object]') return normalizeApprovedAddress(s);
+    } catch { /* ignore */ }
+  }
+
+  return null;
+}
+
+/**
+ * Check whether an OP-721 token is approved for transfer by the escrow.
+ *
+ * Returns true if EITHER:
+ *   - getApproved(tokenId) resolves to expectedOperator  (per-token approval)
+ *   - isApprovedForAll(owner, expectedOperator) === true  (operator approval)
+ *
+ * Two comparison tracks are used for maximum compatibility with OPNet SDK
+ * return shapes (bigint, Address object, or bech32m string):
+ *
+ *   Track A — bigint/hex: operatorAddr.toBigInt() gives the canonical uint256
+ *     that the contract stores via ABI encoding.  getApproved() returns that
+ *     same uint256.  Both sides are normalised to 64-char hex and compared.
+ *     This is the primary track and works regardless of address format.
+ *
+ *   Track B — string: if the SDK returns the approved address as a bech32m
+ *     string (e.g. opt1sq…), compare it directly to expectedOperator after
+ *     lowercasing both.  This is a fallback for future SDK versions.
+ *
+ * Always returns boolean — never throws.
+ */
+export async function fetchNftApproval(
+  tokenAddress: string,
+  tokenId: bigint,
+  expectedOperator: string,
+  owner: string,
+): Promise<boolean> {
+  try {
+    const contract = getContract<any>( // eslint-disable-line @typescript-eslint/no-explicit-any
+      tokenAddress, OP721_APPROVAL_CHECK_ABI, getProvider(), OP_NETWORK,
+    );
+    const operatorAddr = await resolveAddressArg(expectedOperator);
+    const ownerAddr    = await resolveSenderAddress(owner);
+
+    // Track A: derive expectedNormHex from the Address object's bigint form.
+    // operatorAddr.toBigInt() is the uint256 the ABI encoder uses — same value
+    // returned by getApproved() — so this comparison is always canonical.
+    // operatorAddr.address is undefined for P2OP contracts (witness v16), so
+    // we never use it.
+    const operatorBigInt = (operatorAddr as unknown as { toBigInt?(): bigint }).toBigInt?.();
+    const expectedNormHex = operatorBigInt !== undefined
+      ? normalizeApprovedAddress(operatorBigInt)  // always a 64-char hex string
+      : null;                                     // should not happen in practice
+
+    // Track B: normalized lowercase string (bech32m → bech32m comparison).
+    const expectedStr = expectedOperator.toLowerCase().trim();
+
+    console.log('[fetchNftApproval] setup', {
+      tokenAddress,
+      tokenId: tokenId.toString(),
+      expectedOperator,
+      expectedStr,
+      expectedNormHex,
+      operatorBigInt: operatorBigInt?.toString(16),
+    });
+
+    // Path 1 — per-token approval: getApproved(tokenId) === escrow
+    try {
+      const r   = await contract.getApproved(tokenId);
+      const raw: unknown = r.properties?.approved;
+
+      // Track A: both sides as 64-char bigint-derived hex
+      const approvedNorm = normalizeApprovedAddress(raw);
+      const hexMatch     = approvedNorm !== null && expectedNormHex !== null
+                           && approvedNorm === expectedNormHex;
+
+      // Track B: both sides as lowercase bech32m strings
+      const rawStr    = typeof raw === 'string' ? raw.toLowerCase().trim() : null;
+      const strMatch  = rawStr !== null && rawStr.length > 0 && rawStr === expectedStr;
+
+      const match       = hexMatch || strMatch;
+      const comparePath = hexMatch ? 'hex' : strMatch ? 'string' : 'none';
+
+      console.log('[fetchNftApproval] getApproved', {
+        token: tokenAddress,
+        tokenId: tokenId.toString(),
+        expectedOperator,
+        expectedNormHex,
+        expectedStr,
+        typeofRaw: typeof raw,
+        rawApproved: raw === null || raw === undefined ? null : String(raw),
+        approvedNorm,
+        rawStr,
+        hexMatch,
+        strMatch,
+        comparePath,
+        match,
+      });
+
+      if (match) return true;
+    } catch (err) { console.warn('[fetchNftApproval] getApproved error', err); }
+
+    // Path 2 — operator approval: isApprovedForAll(owner, escrow) === true
+    try {
+      const r        = await contract.isApprovedForAll(ownerAddr, operatorAddr);
+      const raw: unknown = r.properties?.approved;
+      const approved = normalizeBool(raw);
+
+      console.log('[fetchNftApproval] isApprovedForAll', {
+        token: tokenAddress,
+        tokenId: tokenId.toString(),
+        owner,
+        operator: expectedOperator,
+        expectedNormHex,
+        typeofRaw: typeof raw,
+        rawIsApprovedForAll: raw,   // full object — intentionally not stringified
+        approved,
+      });
+
+      if (approved) return true;
+    } catch (err) { console.warn('[fetchNftApproval] isApprovedForAll error', err); }
+
+    console.log('[fetchNftApproval] neither path confirmed — returning false');
+    return false;
+  } catch (err) {
+    console.warn('[fetchNftApproval] outer error — returning false', err);
+    return false;
+  }
 }
 
 /** A single NFT entry returned by fetchOwnedNfts */

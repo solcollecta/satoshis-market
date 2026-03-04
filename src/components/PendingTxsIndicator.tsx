@@ -7,13 +7,24 @@
  * a 'pendingTxsChanged' event fires (dispatched by addPendingTx /
  * removePendingTx). Also refreshes timestamps every 30 seconds.
  *
+ * Auto-cleanup for stale 'create' entries:
+ *   useTxFlow removes create entries when it confirms them, but only while the
+ *   /create page is open. If the user navigated away, the entry stays in
+ *   localStorage. On mount + every 30 s, we check getOffer(offerId) for each
+ *   create entry — if the offer exists the tx is confirmed and we remove it.
+ *   This fires 'pendingTxsChanged', which triggers a re-render automatically.
+ *
+ * Link routing:
+ *   - create / approve → /create  (offer doesn't exist yet while pending)
+ *   - fill / cancel    → /listing/:id
+ *
  * Hidden when there are no pending transactions.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { getPendingTxs, removePendingTx, type PendingTx } from '@/lib/pendingTxs';
-import { getOpscanTxUrl } from '@/lib/opnet';
+import { getOpscanTxUrl, getOffer } from '@/lib/opnet';
 
 function timeAgo(ms: number): string {
   const diff = Math.floor((Date.now() - ms) / 1000);
@@ -26,19 +37,48 @@ export function PendingTxsIndicator() {
   const [txs, setTxs] = useState<PendingTx[]>([]);
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const checkingRef = useRef(false); // guard against concurrent cleanup runs
 
   const reload = useCallback(() => setTxs(getPendingTxs()), []);
 
-  // Listen for writes from hooks + refresh timestamps every 30s
+  /**
+   * For each 'create' entry that has a predictedOfferId, check if the offer
+   * now exists on-chain. If it does, the tx confirmed while we weren't watching
+   * (e.g. user navigated away) — remove the stale entry so it disappears cleanly.
+   */
+  const checkConfirmedCreates = useCallback(async () => {
+    if (checkingRef.current) return;
+    checkingRef.current = true;
+    try {
+      const pending = getPendingTxs();
+      const creates = pending.filter(tx => tx.type === 'create' && tx.offerId);
+      await Promise.all(
+        creates.map(async tx => {
+          try {
+            const offer = await getOffer(BigInt(tx.offerId!));
+            if (offer !== null) removePendingTx(tx.txid); // fires 'pendingTxsChanged'
+          } catch { /* network error — leave entry, try again next tick */ }
+        }),
+      );
+    } finally {
+      checkingRef.current = false;
+    }
+  }, []);
+
+  // Listen for writes from hooks + refresh every 30 s + cleanup stale creates
   useEffect(() => {
     reload();
+    void checkConfirmedCreates();
     window.addEventListener('pendingTxsChanged', reload);
-    const ticker = setInterval(reload, 30_000);
+    const ticker = setInterval(() => {
+      reload();
+      void checkConfirmedCreates();
+    }, 30_000);
     return () => {
       window.removeEventListener('pendingTxsChanged', reload);
       clearInterval(ticker);
     };
-  }, [reload]);
+  }, [reload, checkConfirmedCreates]);
 
   // Close on outside click
   useEffect(() => {
@@ -57,22 +97,18 @@ export function PendingTxsIndicator() {
   const dismiss = (txid: string) => removePendingTx(txid);
 
   const label = (tx: PendingTx) => {
-    if (tx.type === 'fill') return `Buying offer #${tx.offerId}`;
-    if (tx.type === 'cancel') return `Cancelling offer #${tx.offerId}`;
-    if (tx.type === 'approve') return 'Creating offer (approving tokens…)';
+    if (tx.type === 'fill')   return `Buying listing #${tx.offerId}`;
+    if (tx.type === 'cancel') return `Cancelling listing #${tx.offerId}`;
+    if (tx.type === 'approve') return 'Creating listing (approving tokens…)';
     return `Creating listing${tx.offerId ? ` #${tx.offerId}` : ''}`;
   };
 
-  const href = (tx: PendingTx) => {
-    if ((tx.type === 'fill' || tx.type === 'cancel') && tx.offerId) return `/offer/${tx.offerId}`;
-    if (tx.type === 'create' && tx.offerId) return `/offer/${tx.offerId}`;
-    return '/create';
-  };
-
-  const linkLabel = (tx: PendingTx) => {
-    if (tx.type === 'fill' || tx.type === 'cancel') return 'Go to offer →';
-    if (tx.type === 'create' && tx.offerId) return 'View offer →';
-    return 'Resume creating →';
+  // Only fill / cancel have a meaningful internal page link.
+  // create / approve have no unique URL while pending — only OPScan is useful.
+  const pageLink = (tx: PendingTx): { href: string; label: string } | null => {
+    if (tx.type === 'fill' && tx.offerId)   return { href: `/listing/${tx.offerId}`, label: 'Go to listing →' };
+    if (tx.type === 'cancel' && tx.offerId) return { href: `/listing/${tx.offerId}`, label: 'Go to listing →' };
+    return null;
   };
 
   return (
@@ -130,16 +166,18 @@ export function PendingTxsIndicator() {
                   </a>
                 </div>
 
-                {/* Age + page link */}
+                {/* Age + optional page link (only for fill / cancel) */}
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] text-slate-600">{timeAgo(tx.timestamp)}</span>
-                  <Link
-                    href={href(tx)}
-                    onClick={() => setOpen(false)}
-                    className="text-[10px] text-brand hover:underline"
-                  >
-                    {linkLabel(tx)}
-                  </Link>
+                  {pageLink(tx) && (
+                    <Link
+                      href={pageLink(tx)!.href}
+                      onClick={() => setOpen(false)}
+                      className="text-[10px] text-brand hover:underline"
+                    >
+                      {pageLink(tx)!.label}
+                    </Link>
+                  )}
                 </div>
 
               </li>

@@ -1,31 +1,28 @@
 'use client';
 
 /**
- * useFillFlow — single-step transaction state machine for the Fill Offer flow.
+ * useCancelFlow — single-step transaction state machine for the Cancel Offer flow.
  *
  * Phases:
- *   idle → simulating → pending → confirmed | failed
- *
- * Architecture — per-txid isolated polling:
- *   Each submitted txid gets its own entry in `txPollsRef` (Map<txid, FillPollEntry>).
- *   `stopTxIntervals(txid)` clears intervals but keeps the entry so the failed-state
- *   `checkStatus` can still operate. `clearTxPoll(txid)` fully removes on success / reset.
+ *   idle → submitting → pending → confirmed | failed
  *
  * Confirmation detection (in order):
- *   1. checkTxConfirmed(txid) — btc_getTransactionReceipt (fast when supported)
- *   2. getOffer(offerId).status === 2 — on-chain offer status fallback
+ *   1. checkTxConfirmed(txid) — btc_getTransactionReceipt via /api/opnet-rpc proxy
+ *   2. getOffer(offerId).status === 3 — on-chain offer state fallback
+ *      (critical: if receipt endpoint is unreliable, state check still confirms)
  *
- * Times out after FILL_TIMEOUT_S (30 minutes).
+ * "Recheck Status" is available in both pending and failed phases.
+ * Times out after CANCEL_TIMEOUT_S (30 minutes).
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { checkTxConfirmed, getOffer } from '@/lib/opnet';
 import { addPendingTx, removePendingTx } from '@/lib/pendingTxs';
 
-export type FillPhase = 'idle' | 'simulating' | 'pending' | 'confirmed' | 'failed';
+export type CancelPhase = 'idle' | 'submitting' | 'pending' | 'confirmed' | 'failed';
 
-export interface FillFlowState {
-  phase: FillPhase;
+export interface CancelFlowState {
+  phase: CancelPhase;
   txid: string | null;
   error: string | null;
   /** Seconds elapsed since the pending tx was broadcast */
@@ -33,34 +30,31 @@ export interface FillFlowState {
 }
 
 const POLL_MS = 5_000;
-const FILL_TIMEOUT_S = 1800; // 30 minutes
+const CANCEL_TIMEOUT_S = 1800; // 30 minutes
 
-/** Per-transaction polling state for the fill flow. */
-interface FillPollEntry {
+interface CancelPollEntry {
   pollId: ReturnType<typeof setInterval> | null;
   tickId: ReturnType<typeof setInterval> | null;
   startTs: number;
 }
 
-export function useFillFlow(offerId: bigint) {
-  const [state, setState] = useState<FillFlowState>({
+export function useCancelFlow(offerId: bigint) {
+  const [state, setState] = useState<CancelFlowState>({
     phase: 'idle',
     txid: null,
     error: null,
     elapsed: 0,
   });
 
-  /** Per-txid polling map — each submitted fill tx has its own isolated entry. */
-  const txPollsRef  = useRef<Map<string, FillPollEntry>>(new Map());
+  const txPollsRef    = useRef<Map<string, CancelPollEntry>>(new Map());
   const activeTxidRef = useRef<string | null>(null);
 
-  // Keep offerId current inside poll closures without causing re-registration.
+  // Keep offerId current inside poll closures without re-registering intervals.
   const offerIdRef = useRef<bigint>(offerId);
   useEffect(() => { offerIdRef.current = offerId; }, [offerId]);
 
-  // ── Interval helpers ────────────────────────────────────────────────────
+  // ── Interval helpers ────────────────────────────────────────────────────────
 
-  /** Stop intervals but keep entry (for failed-state recovery). */
   const stopTxIntervals = useCallback((txid: string) => {
     const entry = txPollsRef.current.get(txid);
     if (!entry) return;
@@ -68,13 +62,11 @@ export function useFillFlow(offerId: bigint) {
     if (entry.tickId !== null) { clearInterval(entry.tickId); entry.tickId = null; }
   }, []);
 
-  /** Stop intervals AND remove entry (success / reset). */
   const clearTxPoll = useCallback((txid: string) => {
     stopTxIntervals(txid);
     txPollsRef.current.delete(txid);
   }, [stopTxIntervals]);
 
-  /** Clear every tracked poll — called on unmount. */
   const clearAllPolls = useCallback(() => {
     for (const entry of txPollsRef.current.values()) {
       if (entry.pollId !== null) clearInterval(entry.pollId);
@@ -85,30 +77,33 @@ export function useFillFlow(offerId: bigint) {
 
   useEffect(() => () => clearAllPolls(), [clearAllPolls]);
 
-  // ── Actions ──────────────────────────────────────────────────────────────
+  // ── Actions ─────────────────────────────────────────────────────────────────
 
-  const setSimulating = useCallback(() => {
+  /** Called before broadcasting — shows wallet confirmation spinner. */
+  const setSubmitting = useCallback(() => {
     if (activeTxidRef.current) stopTxIntervals(activeTxidRef.current);
-    setState({ phase: 'simulating', txid: null, error: null, elapsed: 0 });
+    setState({ phase: 'submitting', txid: null, error: null, elapsed: 0 });
   }, [stopTxIntervals]);
 
   const setFailed = useCallback((err: string) => {
-    // Stop polling but keep entry so checkStatus can still use activeTxidRef.
     if (activeTxidRef.current) stopTxIntervals(activeTxidRef.current);
     setState(s => ({ ...s, phase: 'failed', error: err }));
   }, [stopTxIntervals]);
 
+  /**
+   * Called once the cancel tx is broadcast. Starts polling for confirmation.
+   * Polling checks receipt first, then offer.status === 3 as fallback.
+   */
   const setPending = useCallback((txid: string) => {
-    // Discard any previous fill poll.
     if (activeTxidRef.current && activeTxidRef.current !== txid) {
       clearTxPoll(activeTxidRef.current);
     }
     activeTxidRef.current = txid;
 
-    addPendingTx({ type: 'fill', txid, offerId: offerIdRef.current.toString() });
+    addPendingTx({ type: 'cancel', txid, offerId: offerIdRef.current.toString() });
     setState({ phase: 'pending', txid, error: null, elapsed: 0 });
 
-    const entry: FillPollEntry = {
+    const entry: CancelPollEntry = {
       pollId: null,
       tickId: null,
       startTs: Date.now(),
@@ -125,14 +120,14 @@ export function useFillFlow(offerId: bigint) {
       });
     }, 1000);
 
-    // Poll: check receipt then offer status.
+    // Poll: receipt → offer-state fallback.
     entry.pollId = setInterval(async () => {
       const e = txPollsRef.current.get(txid);
       if (!e || e.pollId === null) return;
 
       const elapsedS = Math.floor((Date.now() - e.startTs) / 1000);
 
-      if (elapsedS >= FILL_TIMEOUT_S) {
+      if (elapsedS >= CANCEL_TIMEOUT_S) {
         clearTxPoll(txid);
         if (activeTxidRef.current === txid) activeTxidRef.current = null;
         setState(s => {
@@ -161,11 +156,11 @@ export function useFillFlow(offerId: bigint) {
         return;
       }
 
-      // Fallback: poll offer status (status 2 = Filled).
+      // Fallback: offer state (status 3 = Cancelled).
       try {
         const offer = await getOffer(offerIdRef.current);
         if (!txPollsRef.current.get(txid)?.pollId) return;
-        if (offer !== null && offer.status === 2) {
+        if (offer !== null && offer.status === 3) {
           clearTxPoll(txid);
           if (activeTxidRef.current === txid) activeTxidRef.current = null;
           removePendingTx(txid);
@@ -180,7 +175,7 @@ export function useFillFlow(offerId: bigint) {
 
   /**
    * One-shot manual recheck — safe to call from both pending and failed states.
-   * Checks receipt first, then offer status. Advances to confirmed if either passes.
+   * Checks receipt, then offer state. Advances to confirmed if either passes.
    * Clears the poll interval on success so it stops running.
    */
   const checkStatus = useCallback(async () => {
@@ -201,7 +196,7 @@ export function useFillFlow(offerId: bigint) {
 
     try {
       const offer = await getOffer(offerIdRef.current);
-      if (offer !== null && offer.status === 2) {
+      if (offer !== null && offer.status === 3) {
         clearTxPoll(txid);
         if (activeTxidRef.current === txid) activeTxidRef.current = null;
         removePendingTx(txid);
@@ -222,5 +217,5 @@ export function useFillFlow(offerId: bigint) {
     setState({ phase: 'idle', txid: null, error: null, elapsed: 0 });
   }, [clearTxPoll]);
 
-  return { state, setSimulating, setPending, setFailed, checkStatus, reset };
+  return { state, setSubmitting, setPending, setFailed, checkStatus, reset };
 }

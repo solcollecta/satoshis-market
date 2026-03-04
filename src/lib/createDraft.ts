@@ -24,8 +24,6 @@ export interface CreateDraftData {
   tokenAmountHuman: string;
   tokenId: string;
   btcValue: string;
-  /** Human-readable P2TR address the user entered (opt1p… / bc1p… / tb1p…) */
-  payoutAddress: string;
   /** Resolved 0x-prefixed 64-char tweaked pubkey — used directly in createOffer() */
   makerRecipientKey: string;
   allowedTaker: string;

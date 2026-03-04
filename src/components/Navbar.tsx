@@ -2,13 +2,18 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
+import { usePathname } from 'next/navigation';
 import { WalletBar } from './WalletBar';
 import { PendingTxsIndicator } from './PendingTxsIndicator';
+import { BtcPrice } from './BtcPrice';
 
 export function Navbar() {
+  const pathname = usePathname();
+  const isHome = pathname === '/';
+
   return (
     <header className="sticky top-0 z-50 border-b border-surface-border/60 bg-surface/80 backdrop-blur-xl">
-      <div className="mx-auto max-w-6xl px-4 h-16 flex items-center justify-between gap-6">
+      <div className="mx-auto max-w-6xl px-4 h-16 flex items-center gap-4">
 
         {/* Brand */}
         <Link href="/" className="flex items-center gap-3 shrink-0 group">
@@ -32,8 +37,33 @@ export function Navbar() {
           </div>
         </Link>
 
-        {/* Pending transactions indicator + Wallet */}
+        {/* Nav links */}
+        <nav className="hidden sm:flex items-center gap-1">
+          {[
+            { href: '/assets',      label: 'Assets' },
+            { href: '/collections', label: 'NFT Collections' },
+            { href: '/tokens',      label: 'OP-20 Coins' },
+          ].map(({ href, label }) => (
+            <Link
+              key={href}
+              href={href}
+              className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                pathname === href
+                  ? 'text-white bg-surface-card'
+                  : 'text-slate-400 hover:text-white hover:bg-surface-card'
+              }`}
+            >
+              {label}
+            </Link>
+          ))}
+        </nav>
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* BTC price + Pending transactions + Wallet */}
         <div className="flex items-center gap-3 shrink-0">
+          <BtcPrice />
           <PendingTxsIndicator />
           <WalletBar />
         </div>

@@ -30,6 +30,8 @@ interface Props {
   btcBalanceSats?: bigint | null;
   /** Total BTC required to fill this offer (maker payment + fee) in satoshis. */
   requiredSats?: bigint;
+  /** Hide the internal payment summary (use when the parent renders its own breakdown) */
+  hidePaymentSummary?: boolean;
 }
 
 function Spinner() {
@@ -85,6 +87,7 @@ export function FillProgress({
   fillLabel = 'Fill Offer',
   btcBalanceSats,
   requiredSats,
+  hidePaymentSummary = false,
 }: Props) {
   const { phase, txid, error, elapsed } = state;
 
@@ -99,7 +102,7 @@ export function FillProgress({
       {phase === 'idle' && (
         <>
           {/* Payment summary */}
-          {requiredSats !== undefined && (
+          {requiredSats !== undefined && !hidePaymentSummary && (
             <div className="bg-surface rounded-lg px-3 py-2.5 border border-surface-border space-y-1.5 text-xs">
               <div className="flex justify-between">
                 <span className="text-slate-400">Required</span>
@@ -153,11 +156,11 @@ export function FillProgress({
         <>
           <div className="flex items-center gap-3 text-sm text-slate-300">
             <Spinner />
-            Waiting for confirmation…
+            Purchase submitted — waiting for on-chain confirmation…
           </div>
           {txid && (
             <div className="bg-surface rounded-lg px-3 py-2 border border-surface-border">
-              <p className="text-xs text-slate-400 font-medium mb-0.5">Transaction sent</p>
+              <p className="text-xs text-slate-400 font-medium mb-0.5">Transaction submitted</p>
               <TxRow txid={txid} />
             </div>
           )}
@@ -165,15 +168,20 @@ export function FillProgress({
             {elapsed > 0 ? `${elapsed}s elapsed · ` : ''}
             Checking every 5 seconds. This can take a few minutes — please be patient.
           </p>
+          {elapsed >= 600 && (
+            <button type="button" onClick={onCheckStatus} className="btn-secondary text-sm w-full">
+              Recheck Status
+            </button>
+          )}
         </>
       )}
 
-      {/* confirmed */}
+      {/* confirmed — state verified on-chain */}
       {phase === 'confirmed' && (
         <>
           <div className="flex items-center gap-2 text-green-400">
             <span className="text-lg leading-none">✓</span>
-            <p className="text-sm font-semibold">Purchase complete!</p>
+            <p className="text-sm font-semibold">Purchase complete — state verified on-chain.</p>
           </div>
           {txid && (
             <div className="bg-surface rounded-lg px-3 py-2 border border-surface-border">
@@ -183,16 +191,24 @@ export function FillProgress({
         </>
       )}
 
-      {/* failed / timed-out */}
-      {phase === 'failed' && (
+      {/* failed — no tx broadcast (wallet rejected, insufficient UTXOs, simulation error) */}
+      {phase === 'failed' && !txid && (
         <>
           <p className="text-sm text-amber-400 break-words">{error}</p>
-          {txid && (
-            <div className="bg-surface rounded-lg px-3 py-2 border border-surface-border">
-              <p className="text-xs text-slate-400 font-medium mb-0.5">Transaction</p>
-              <TxRow txid={txid} />
-            </div>
-          )}
+          <button type="button" onClick={onReset} className="btn-secondary text-sm w-full">
+            Try Again
+          </button>
+        </>
+      )}
+
+      {/* failed — tx was broadcast but confirmation timed out */}
+      {phase === 'failed' && txid && (
+        <>
+          <p className="text-sm text-amber-400 break-words">{error}</p>
+          <div className="bg-surface rounded-lg px-3 py-2 border border-surface-border">
+            <p className="text-xs text-slate-400 font-medium mb-0.5">Transaction</p>
+            <TxRow txid={txid} />
+          </div>
           <p className="text-xs text-slate-500">
             If your wallet shows the transaction as confirmed, click below to check on-chain status.
           </p>

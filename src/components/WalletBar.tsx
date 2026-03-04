@@ -27,13 +27,24 @@ export function WalletBar() {
           </button>
         </div>
       ) : (
-        <button
-          onClick={connect}
-          disabled={connecting}
-          className="px-4 py-1.5 rounded-full text-sm font-semibold bg-brand text-white hover:bg-brand-dark disabled:opacity-50 transition-colors"
-        >
-          {connecting ? 'Connecting…' : 'Connect Wallet'}
-        </button>
+        <div className="flex items-center gap-2">
+          <a
+            href="https://chromewebstore.google.com/detail/opwallet/pmbjpcmaaladnfpacpmhmnfmpklgbdjb"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-xs bg-surface-card border border-surface-border rounded-full px-3 py-1 font-mono text-slate-400 hover:text-white hover:border-surface-bright transition-colors"
+          >
+            Download OPNet Wallet
+          </a>
+          <button
+            onClick={connect}
+            disabled={connecting}
+            className="inline-flex items-center gap-1.5 text-xs bg-surface-card border border-surface-border rounded-full px-3 py-1 font-mono text-slate-400 hover:text-white hover:border-surface-bright transition-colors disabled:opacity-50"
+          >
+            <span className="w-2 h-2 rounded-full bg-slate-600" />
+            {connecting ? 'Connecting…' : 'Connect Wallet'}
+          </button>
+        </div>
       )}
     </div>
   );

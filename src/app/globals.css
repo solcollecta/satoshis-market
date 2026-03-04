@@ -94,7 +94,7 @@
     font-size: 0.875rem;
     font-weight: 700;
     background-color: #F7931A;
-    color: #000;
+    color: #fff;
     letter-spacing: -0.01em;
     transition: background-color 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
     box-shadow: 0 0 24px rgba(247, 147, 26, 0.22);
@@ -210,4 +210,90 @@
   .divider {
     border-top: 1px solid #1A2236;
   }
+
+  /* ── BTC neon sign ──────────────────────────────────────────────── */
+  /*
+    Two synchronized animations — symbol is brighter, price is softer.
+    Flicker window: 80–86 % of the 4 s cycle = ~3.2 s to ~3.44 s.
+    Opacity dips are small (never below 0.72) — realistic, never dramatic.
+    text-shadow layers: close bloom → mid spread → outer ambient.
+    Decimal % stops are valid CSS and give fine timing control.
+  */
+
+  @keyframes btc-symbol-neon {
+    /* ── Steady glow ── */
+    0%, 79%  {
+      opacity: 1;
+      text-shadow:
+        0 0 4px  rgba(247, 147, 26, 0.95),
+        0 0 10px rgba(247, 147, 26, 0.55),
+        0 0 24px rgba(247, 147, 26, 0.20);
+    }
+    /* ── First flicker dip (100 ms) ── */
+    80% {
+      opacity: 0.72;
+      text-shadow: 0 0 3px rgba(247, 147, 26, 0.40);
+    }
+    /* ── Snap back ── */
+    82.5% {
+      opacity: 1;
+      text-shadow:
+        0 0 4px  rgba(247, 147, 26, 0.95),
+        0 0 10px rgba(247, 147, 26, 0.55),
+        0 0 24px rgba(247, 147, 26, 0.20);
+    }
+    /* ── Second, lighter dip (60 ms) ── */
+    84% {
+      opacity: 0.85;
+      text-shadow: 0 0 3px rgba(247, 147, 26, 0.50);
+    }
+    /* ── Full recovery, hold until loop ── */
+    86%, 100% {
+      opacity: 1;
+      text-shadow:
+        0 0 4px  rgba(247, 147, 26, 0.95),
+        0 0 10px rgba(247, 147, 26, 0.55),
+        0 0 24px rgba(247, 147, 26, 0.20);
+    }
+  }
+
+  @keyframes btc-price-neon {
+    /* ── Soft constant glow ── */
+    0%, 79% {
+      opacity: 1;
+      text-shadow:
+        0 0 6px  rgba(247, 147, 26, 0.18),
+        0 0 16px rgba(247, 147, 26, 0.07);
+    }
+    /* ── Synchronized dip — less deep than symbol ── */
+    80% {
+      opacity: 0.82;
+      text-shadow: 0 0 3px rgba(247, 147, 26, 0.10);
+    }
+    82.5% {
+      opacity: 1;
+      text-shadow:
+        0 0 6px  rgba(247, 147, 26, 0.18),
+        0 0 16px rgba(247, 147, 26, 0.07);
+    }
+    84% {
+      opacity: 0.92;
+      text-shadow: 0 0 4px rgba(247, 147, 26, 0.12);
+    }
+    86%, 100% {
+      opacity: 1;
+      text-shadow:
+        0 0 6px  rgba(247, 147, 26, 0.18),
+        0 0 16px rgba(247, 147, 26, 0.07);
+    }
+  }
+
+  .btc-symbol-neon {
+    animation: btc-symbol-neon 4s linear infinite;
+  }
+
+  .btc-price-neon {
+    animation: btc-price-neon 4s linear infinite;
+  }
+
 }
