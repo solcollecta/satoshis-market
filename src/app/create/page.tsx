@@ -17,7 +17,7 @@ import {
   fetchNftApproval,
   type NftEntry,
 } from '@/lib/opnet';
-import { parseUnits, parseBtcToSats, formatUnits, saveListingTimestamp, type CachedToken } from '@/lib/tokens';
+import { parseUnits, parseBtcToSats, formatUnits, formatTokenBalance, saveListingTimestamp, type CachedToken } from '@/lib/tokens';
 import { NftPicker } from '@/components/NftPicker';
 import { TokenPicker } from '@/components/TokenPicker';
 import { TxProgress } from '@/components/TxProgress';
@@ -95,21 +95,22 @@ export default function CreateOfferPage() {
     try { localStorage.setItem(NFT_CONTRACT_KEY, tokenAddress); } catch { /* ignore */ }
   }, [tokenAddress, mode]);
 
-  // ── Auto-fetch decimals when address typed manually ───────────────────────
+  // ── Auto-fetch metadata + balance when address typed manually ────────────
   useEffect(() => {
     if (!tokenAddress || mode !== 'op20') return;
     let cancelled = false;
     const t = setTimeout(async () => {
       try {
-        const info = await fetchTokenInfo(tokenAddress);
+        const info = await fetchTokenInfo(tokenAddress, address ?? undefined);
         if (!cancelled) {
           setTokenDecimals(info.decimals);
           setTokenMeta({ name: info.name, symbol: info.symbol });
+          if (info.balance > 0n) setTokenBalance(info.balance);
         }
       } catch { /* keep defaults — metadata failure must never block create flow */ }
     }, 800);
     return () => { cancelled = true; clearTimeout(t); };
-  }, [tokenAddress, mode]);
+  }, [tokenAddress, address, mode]);
 
   // ── OP-20 allowance pre-check ─────────────────────────────────────────────
   // Debounced (600 ms) to avoid RPC spam on every keystroke of the amount field.
@@ -486,6 +487,7 @@ export default function CreateOfferPage() {
                 setTokenAddress(e.target.value);
                 setTokenMeta(null);
                 setTokenBalance(null);
+                setTokenAmountHuman('');
               }}
               required
             />
@@ -521,27 +523,36 @@ export default function CreateOfferPage() {
                   onClick={() => setTokenPickerOpen(true)}
                   className="btn-secondary text-xs shrink-0 px-3 py-2"
                 >
-                  Select from wallet
+                  Saved tokens
                 </button>
               </div>
-              {/* Percentage shortcuts — only when balance is known */}
+              {/* Balance + percentage shortcuts — shown once balance is known */}
               {tokenBalance !== null && (
-                <div className="flex gap-1.5 mt-2">
-                  {([25n, 50n, 75n, 100n] as bigint[]).map((pct) => (
-                    <button
-                      key={pct.toString()}
-                      type="button"
-                      onClick={() => {
-                        const full = formatUnits(tokenBalance! * pct / 100n, tokenDecimals);
-                        const [int, frac = ''] = full.split('.');
-                        setTokenAmountHuman(frac ? `${int}.${frac.slice(0, 4)}` : int);
-                      }}
-                      className="flex-1 text-xs py-1 rounded border border-surface-border text-slate-400 hover:text-white hover:border-brand transition-colors"
-                    >
-                      {pct === 100n ? 'Max' : `${pct}%`}
-                    </button>
-                  ))}
-                </div>
+                <>
+                  <p className="text-xs text-slate-400 mt-1.5">
+                    Balance:{' '}
+                    <span className="text-slate-200">
+                      {formatTokenBalance(tokenBalance, tokenDecimals)}
+                      {tokenMeta ? ` ${tokenMeta.symbol}` : ''}
+                    </span>
+                  </p>
+                  <div className="flex gap-1.5 mt-1.5">
+                    {([25n, 50n, 75n, 100n] as bigint[]).map((pct) => (
+                      <button
+                        key={pct.toString()}
+                        type="button"
+                        onClick={() => {
+                          const full = formatUnits(tokenBalance! * pct / 100n, tokenDecimals);
+                          const [int, frac = ''] = full.split('.');
+                          setTokenAmountHuman(frac ? `${int}.${frac.slice(0, 4)}` : int);
+                        }}
+                        className="flex-1 text-xs py-1 rounded border border-surface-border text-slate-400 hover:text-white hover:border-brand transition-colors"
+                      >
+                        {pct === 100n ? 'Max' : `${pct}%`}
+                      </button>
+                    ))}
+                  </div>
+                </>
               )}
             </div>
           ) : (

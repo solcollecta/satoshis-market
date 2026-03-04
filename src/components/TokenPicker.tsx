@@ -6,7 +6,7 @@ import {
   loadCachedTokens,
   saveCachedToken,
   removeCachedToken,
-  formatUnits,
+  formatTokenBalance,
   type CachedToken,
 } from '@/lib/tokens';
 
@@ -20,7 +20,6 @@ type TokenRow = CachedToken & { balance: bigint | null; balanceLoading: boolean 
 
 export function TokenPicker({ walletAddress, onSelect, onClose }: Props) {
   const [rows, setRows] = useState<TokenRow[]>([]);
-  const [query, setQuery] = useState('');
   const [newAddr, setNewAddr] = useState('');
   const [addLoading, setAddLoading] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
@@ -56,16 +55,6 @@ export function TokenPicker({ walletAddress, onSelect, onClose }: Props) {
         });
     });
   }, [walletAddress]);
-
-  const filtered = rows.filter((r) => {
-    if (!query) return true;
-    const q = query.toLowerCase();
-    return (
-      r.name.toLowerCase().includes(q) ||
-      r.symbol.toLowerCase().includes(q) ||
-      r.address.toLowerCase().includes(q)
-    );
-  });
 
   const handleAdd = async () => {
     const addr = newAddr.trim();
@@ -114,7 +103,7 @@ export function TokenPicker({ walletAddress, onSelect, onClose }: Props) {
       <div className="bg-surface-card border border-surface-border rounded-xl p-5 w-full max-w-md mx-4 space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-white">Select Token</h3>
+          <h3 className="font-semibold text-white">Saved tokens</h3>
           <button
             onClick={onClose}
             className="text-slate-400 hover:text-white text-2xl leading-none"
@@ -123,24 +112,14 @@ export function TokenPicker({ walletAddress, onSelect, onClose }: Props) {
           </button>
         </div>
 
-        {/* Search */}
-        <input
-          type="text"
-          placeholder="Search name, symbol, address…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-
         {/* Token list */}
         <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-          {filtered.length === 0 && (
+          {rows.length === 0 && (
             <p className="text-sm text-slate-400 text-center py-6">
-              {rows.length === 0
-                ? 'No saved tokens yet. Add one by contract address below.'
-                : 'No tokens match your search.'}
+              No saved tokens yet. Add one by contract address below.
             </p>
           )}
-          {filtered.map((row) => (
+          {rows.map((row) => (
             <div
               key={row.address}
               className="flex items-center gap-2 bg-surface rounded-lg p-3 border border-surface-border hover:border-brand transition-colors"
@@ -157,9 +136,7 @@ export function TokenPicker({ walletAddress, onSelect, onClose }: Props) {
                   {row.balanceLoading ? (
                     <span className="animate-pulse text-slate-500">Loading balance…</span>
                   ) : row.balance !== null ? (
-                    <span>
-                      {formatUnits(row.balance, row.decimals)} {row.symbol}
-                    </span>
+                    <span>{formatTokenBalance(row.balance, row.decimals)} {row.symbol}</span>
                   ) : (
                     <span className="text-slate-500">Balance unavailable</span>
                   )}

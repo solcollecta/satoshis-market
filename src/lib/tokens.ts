@@ -138,6 +138,40 @@ export function formatRelativeTime(ms: number): string {
   return new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+// ── Balance display formatter ──────────────────────────────────────────────────
+
+/**
+ * Format a raw token bigint for inline balance display.
+ * Rules:
+ *   - value >= 0.01  → 2–4 significant decimal places (trim trailing zeros)
+ *   - value < 0.01   → up to 6 decimal places (trim trailing zeros)
+ *   - Never shows the full raw precision (e.g. 18 decimals)
+ *
+ * e.g. 1234567800n with decimals=4 → "123456.78"
+ *      300n with decimals=4        → "0.03"
+ *      12n  with decimals=4        → "0.0012"
+ */
+export function formatTokenBalance(raw: bigint, decimals: number): string {
+  if (raw === 0n) return '0';
+  const d = BigInt(10) ** BigInt(decimals);
+  const intPart  = raw / d;
+  const fracRaw  = raw % d;
+  const fracFull = fracRaw.toString().padStart(decimals, '0');
+
+  // Build floating-point value just for threshold comparison (safe up to 2^53)
+  const value = Number(intPart) + Number(fracRaw) / Number(d);
+
+  let maxDecimals: number;
+  if (value >= 0.01) {
+    maxDecimals = 4;
+  } else {
+    maxDecimals = 6;
+  }
+
+  const frac = fracFull.slice(0, maxDecimals).replace(/0+$/, '');
+  return frac ? `${intPart}.${frac}` : intPart.toString();
+}
+
 // ── Compact token amount formatter ────────────────────────────────────────────
 
 /**
