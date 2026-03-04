@@ -434,7 +434,7 @@ export default function OfferDetailPage({
                 <span className="flex items-center gap-2 flex-wrap">
                   <CopyableAddress full={bech32} orange />
                   <a href={getOpscanAccountUrl(bech32)} target="_blank" rel="noopener noreferrer"
-                    className="text-[10px] font-semibold text-brand border border-brand/30 px-1.5 py-0.5 rounded hover:bg-brand/10 transition-colors shrink-0">
+                    className="text-[10px] font-semibold text-brand hover:underline shrink-0">
                     OPScan
                   </a>
                 </span>
@@ -450,7 +450,7 @@ export default function OfferDetailPage({
             <span className="flex items-center gap-2 flex-wrap">
               <CopyableAddress full={offer.token} orange />
               <a href={offer.isNFT ? getOpscanContractUrl(offer.token) : getOpscanTokenUrl(offer.token)} target="_blank" rel="noopener noreferrer"
-                className="text-[10px] font-semibold text-brand border border-brand/30 px-1.5 py-0.5 rounded hover:bg-brand/10 transition-colors shrink-0">
+                className="text-[10px] font-semibold text-brand hover:underline shrink-0">
                 OPScan
               </a>
             </span>
