@@ -503,6 +503,40 @@ export function resolveIpfsUri(uri: string): string {
   return uri.startsWith('ipfs://') ? `https://ipfs.io/ipfs/${uri.slice(7)}` : uri;
 }
 
+/**
+ * Extract the IPFS CID (+ optional sub-path) from any common IPFS URI format:
+ *   ipfs://Qm...           → "Qm..."
+ *   https://*.../ipfs/Qm... → "Qm..."
+ * Returns null for non-IPFS URIs.
+ */
+function extractIpfsCidPath(uri: string): string | null {
+  if (uri.startsWith('ipfs://')) return uri.slice(7);
+  const m = uri.match(/\/ipfs\/(.+)/);
+  return m ? m[1] : null;
+}
+
+/**
+ * Resolve an NFT image URI to a primary + optional fallback URL.
+ *
+ * For IPFS images:
+ *   primary  = https://images.opnet.org/500/500/ipfs/<CID>  (fast, pre-sized)
+ *   fallback = https://ipfs.io/ipfs/<CID>                   (used on img onError)
+ *
+ * For non-IPFS (https/http) images:
+ *   primary  = original URL
+ *   fallback = null
+ */
+export function resolveNftImageUrls(raw: string): { primary: string; fallback: string | null } {
+  const cidPath = extractIpfsCidPath(raw);
+  if (cidPath) {
+    return {
+      primary:  `https://images.opnet.org/500/500/ipfs/${cidPath}`,
+      fallback: `https://ipfs.io/ipfs/${cidPath}`,
+    };
+  }
+  return { primary: raw, fallback: null };
+}
+
 export interface NftCollectionInfo {
   name?: string;
   symbol?: string;

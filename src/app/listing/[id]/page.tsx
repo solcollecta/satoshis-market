@@ -11,6 +11,7 @@ import {
   getOpscanAccountUrl,
   getOpscanTokenUrl,
   getOpscanContractUrl,
+  resolveNftImageUrls,
   fetchTokenInfo,
   fetchNftMetadata,
   fetchNftCollectionInfo,
@@ -371,15 +372,21 @@ export default function OfferDetailPage({
             {offer.isNFT ? (
               <>
                 {(() => {
-                  const imgSrc = nftMeta?.image ?? nftCollection?.icon;
-                  return imgSrc ? (
+                  const rawSrc = nftMeta?.image ?? nftCollection?.icon;
+                  if (!rawSrc) return null;
+                  const { primary, fallback } = resolveNftImageUrls(rawSrc);
+                  return (
                     <img
-                      src={imgSrc}
+                      src={primary}
                       alt={nftName}
                       className="w-full max-w-[140px] aspect-square rounded-xl object-cover border border-surface-border mb-3 shadow-lg"
-                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      onError={(e) => {
+                        const el = e.target as HTMLImageElement;
+                        if (fallback && el.src !== fallback) { el.src = fallback; }
+                        else { el.style.display = 'none'; }
+                      }}
                     />
-                  ) : null;
+                  );
                 })()}
                 <p className="text-xl font-bold text-white leading-tight">{nftName}</p>
                 <p className="text-[11px] text-slate-600 font-mono mt-1.5 truncate">

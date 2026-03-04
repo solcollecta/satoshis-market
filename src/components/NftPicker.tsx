@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { fetchOwnedNfts, fetchNftCollectionInfo, fetchNftMetadata, clearNftTokenCache, type NftEntry, type NftMetadata } from '@/lib/opnet';
+import { fetchOwnedNfts, fetchNftCollectionInfo, fetchNftMetadata, clearNftTokenCache, resolveNftImageUrls, type NftEntry, type NftMetadata } from '@/lib/opnet';
 import {
   loadCachedCollections,
   saveCachedCollection,
@@ -257,9 +257,9 @@ export function NftPicker({ walletAddress, initialContract = '', onSelect, onClo
               <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
                 {nfts.map((nft) => {
                   const tid = nft.tokenId.toString();
-                  const meta = nftMeta.get(tid);          // undefined = loading, null = no image
-                  const imgSrc = meta?.image ?? null;
+                  const meta = nftMeta.get(tid);   // undefined = still loading, null = fetched/no image
                   const imgLoading = !nftMeta.has(tid);
+                  const resolved = meta?.image ? resolveNftImageUrls(meta.image) : null;
                   return (
                     <button
                       key={tid}
@@ -270,12 +270,19 @@ export function NftPicker({ walletAddress, initialContract = '', onSelect, onClo
                       <div className="w-14 h-14 rounded-lg overflow-hidden shrink-0 bg-surface-border flex items-center justify-center">
                         {imgLoading ? (
                           <div className="w-full h-full skeleton" />
-                        ) : imgSrc ? (
+                        ) : resolved ? (
                           <img
-                            src={imgSrc}
+                            src={resolved.primary}
                             alt={`#${tid}`}
                             className="w-full h-full object-cover"
-                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                            onError={(e) => {
+                              const el = e.target as HTMLImageElement;
+                              if (resolved.fallback && el.src !== resolved.fallback) {
+                                el.src = resolved.fallback;
+                              } else {
+                                el.style.display = 'none';
+                              }
+                            }}
                           />
                         ) : (
                           <span className="text-2xl text-slate-600">🖼</span>
