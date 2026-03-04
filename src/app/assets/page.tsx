@@ -10,6 +10,8 @@ import {
   keyToHex,
   normalizeToHex32,
   hexToBigint,
+  fetchTokenInfo,
+  fetchNftCollectionInfo,
 } from '@/lib/opnet';
 import {
   getPrivateListingsForMe,
@@ -62,6 +64,7 @@ function AssetsPage() {
   const [requests, setRequests]   = useState<BuyRequest[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(false);
   const [privateToMe, setPrivateToMe] = useState(() => searchParams.get('privateToMe') === '1');
+  const [nameCache, setNameCache] = useState<Map<string, string>>(new Map());
 
   const toggleStatus = (key: StatusKey) => {
     setStatusFilters(prev => {
@@ -104,6 +107,37 @@ function AssetsPage() {
   };
 
   useEffect(() => { void load(); }, []);
+
+  // Build token/collection name cache for text search
+  useEffect(() => {
+    if (offers.length === 0) return;
+    const unique = [...new Set(offers.map(o => o.token))];
+    const missing = unique.filter(addr => !nameCache.has(addr));
+    if (missing.length === 0) return;
+
+    const entries: [string, string][] = [];
+    Promise.allSettled(
+      missing.map(async addr => {
+        const isNft = offers.find(o => o.token === addr)?.isNFT;
+        if (isNft) {
+          const info = await fetchNftCollectionInfo(addr);
+          if (info?.name) entries.push([addr, info.name]);
+        } else {
+          const info = await fetchTokenInfo(addr);
+          if (info?.symbol && info.symbol !== '???') entries.push([addr, info.symbol]);
+          if (info?.name) entries.push([addr + ':name', info.name]);
+        }
+      })
+    ).then(() => {
+      if (entries.length > 0) {
+        setNameCache(prev => {
+          const next = new Map(prev);
+          for (const [k, v] of entries) next.set(k, v);
+          return next;
+        });
+      }
+    });
+  }, [offers]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (viewMode === 'requests') void loadRequests();
@@ -182,13 +216,22 @@ function AssetsPage() {
           const norm = inputKey.toLowerCase();
           list = list.filter(o => keyToHex(o.btcRecipientKey).toLowerCase() === norm);
         } else {
-          list = list.filter(o => o.token.toLowerCase().includes(q));
+          list = list.filter(o => {
+            // Match contract address
+            if (o.token.toLowerCase().includes(q)) return true;
+            // Match token symbol or collection name
+            const sym = nameCache.get(o.token)?.toLowerCase();
+            if (sym && sym.includes(q)) return true;
+            const name = nameCache.get(o.token + ':name')?.toLowerCase();
+            if (name && name.includes(q)) return true;
+            return false;
+          });
         }
       }
     }
 
     return list;
-  }, [offers, filter, sort, search, statusFilters, mineOnly, myOpnetAddr, privateToMe, address]);
+  }, [offers, filter, sort, search, statusFilters, mineOnly, myOpnetAddr, privateToMe, address, nameCache]);
 
   // ── Filtered requests (asset type only) ───────────────────────────────────
   const displayedRequests = useMemo(() => {
@@ -307,7 +350,7 @@ function AssetsPage() {
         <div className="flex items-center gap-2 flex-wrap">
           <input
             type="search"
-            placeholder="Search by ID, seller address, or contract…"
+            placeholder="Search by name, ID, seller address, or contract…"
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="flex-1 min-w-48 !rounded-lg !py-1.5 !text-sm"
