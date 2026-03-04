@@ -8,7 +8,9 @@ import {
   simulateEscrowWrite,
   calcFeeSats,
   formatBtcFromSats,
-  getOpscanAddressUrl,
+  getOpscanAccountUrl,
+  getOpscanTokenUrl,
+  getOpscanContractUrl,
   fetchTokenInfo,
   fetchNftMetadata,
   fetchNftCollectionInfo,
@@ -413,7 +415,7 @@ export default function OfferDetailPage({
               return (
                 <span className="flex items-center gap-2 flex-wrap">
                   <CopyableAddress full={bech32} orange />
-                  <a href={getOpscanAddressUrl(bech32)} target="_blank" rel="noopener noreferrer"
+                  <a href={getOpscanAccountUrl(bech32)} target="_blank" rel="noopener noreferrer"
                     className="text-[10px] font-semibold text-brand border border-brand/30 px-1.5 py-0.5 rounded hover:bg-brand/10 transition-colors shrink-0">
                     OPScan
                   </a>
@@ -429,7 +431,7 @@ export default function OfferDetailPage({
           value={
             <span className="flex items-center gap-2 flex-wrap">
               <CopyableAddress full={offer.token} orange />
-              <a href={getOpscanAddressUrl(offer.token)} target="_blank" rel="noopener noreferrer"
+              <a href={offer.isNFT ? getOpscanContractUrl(offer.token) : getOpscanTokenUrl(offer.token)} target="_blank" rel="noopener noreferrer"
                 className="text-[10px] font-semibold text-brand border border-brand/30 px-1.5 py-0.5 rounded hover:bg-brand/10 transition-colors shrink-0">
                 OPScan
               </a>

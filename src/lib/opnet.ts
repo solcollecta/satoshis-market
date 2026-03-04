@@ -71,14 +71,24 @@ export const OPSCAN_NETWORK: string =
   process.env.NEXT_PUBLIC_OPNET_NETWORK ??
   (OP_NETWORK_NAME === 'mainnet' ? 'op_mainnet' : 'op_testnet');
 
-/** Build an OPScan transaction URL. https://opscan.org/transactions/<hash>?network=<slug> */
+/** OPScan — transaction page. */
 export function getOpscanTxUrl(txHash: string): string {
   return `https://opscan.org/transactions/${txHash}?network=${OPSCAN_NETWORK}`;
 }
 
-/** Build an OPScan address URL. https://opscan.org/address/<address>?network=<slug> */
-export function getOpscanAddressUrl(address: string): string {
-  return `https://opscan.org/address/${address}?network=${OPSCAN_NETWORK}`;
+/** OPScan — account/address page (P2TR bech32m: opt1p…, tb1p…). */
+export function getOpscanAccountUrl(addr: string): string {
+  return `https://opscan.org/accounts/${addr}?network=${OPSCAN_NETWORK}`;
+}
+
+/** OPScan — OP-20 token page (0x… contract address). */
+export function getOpscanTokenUrl(token0x: string): string {
+  return `https://opscan.org/tokens/${token0x}?network=${OPSCAN_NETWORK}`;
+}
+
+/** OPScan — OP-721 / generic contract page (0x… contract address). */
+export function getOpscanContractUrl(contract0x: string): string {
+  return `https://opscan.org/contracts/${contract0x}?network=${OPSCAN_NETWORK}`;
 }
 
 // ── Transaction receipt helper ────────────────────────────────────────────────
