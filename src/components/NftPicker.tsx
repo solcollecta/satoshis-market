@@ -271,15 +271,14 @@ export function NftPicker({ walletAddress, initialContract = '', onSelect, onClo
                       onClick={() => onSelect(nft)}
                       className="w-full text-left bg-surface rounded-lg p-2.5 border border-surface-border hover:border-brand transition-colors flex items-center gap-3 min-w-0"
                     >
-                      {/* Fixed-size thumbnail — never grows */}
-                      <div className="w-12 h-12 shrink-0 rounded-lg overflow-hidden bg-surface-card/60 flex items-center justify-center">
-                        {imgLoading ? (
-                          <div className="w-full h-full skeleton" />
-                        ) : resolved ? (
+                      {/* Fixed-size thumbnail — inline styles guarantee size regardless of CSS conflicts */}
+                      <div style={{ width: 48, height: 48, flexShrink: 0, borderRadius: 8, overflow: 'hidden', background: 'rgba(255,255,255,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {resolved ? (
+                          // Show image immediately (collection icon or per-token) — don't wait for skeleton
                           <img
                             src={resolved.primary}
                             alt=""
-                            className="w-full h-full object-cover block"
+                            style={{ width: 48, height: 48, objectFit: 'cover', display: 'block', flexShrink: 0 }}
                             loading="lazy"
                             decoding="async"
                             onError={(e) => {
@@ -291,8 +290,10 @@ export function NftPicker({ walletAddress, initialContract = '', onSelect, onClo
                               }
                             }}
                           />
+                        ) : imgLoading ? (
+                          <div style={{ width: 48, height: 48 }} className="skeleton" />
                         ) : (
-                          <span className="text-lg text-slate-600">🖼</span>
+                          <span className="text-base text-slate-600">🖼</span>
                         )}
                       </div>
                       {/* Text — truncates, never pushes layout */}
