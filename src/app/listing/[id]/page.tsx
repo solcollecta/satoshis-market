@@ -348,16 +348,18 @@ export default function OfferDetailPage({
           </p>
           <h1 className="text-2xl font-bold text-white tracking-tight">
             Listing <span className="text-brand">#{offer.id.toString()}</span>
-            {createdAt != null && (
-              <span className="text-sm font-normal text-slate-500 ml-3">
-                {offer.status === 2 ? 'Sold' : 'Listed'} {formatRelativeCompact(createdAt)}
-              </span>
-            )}
           </h1>
         </div>
-        <span className={`shrink-0 text-[11px] font-semibold px-3 py-1 rounded-full ${STATUS_STYLES[offer.status]}`}>
-          {OFFER_STATUS[offer.status]}
-        </span>
+        <div className="flex flex-col items-end gap-1.5 shrink-0">
+          <span className={`text-[11px] font-semibold px-3 py-1 rounded-full ${STATUS_STYLES[offer.status]}`}>
+            {OFFER_STATUS[offer.status]}
+          </span>
+          {createdAt != null && (
+            <span className="text-[11px] text-slate-500">
+              {offer.status === 2 ? 'Sold' : 'Listed'} {formatRelativeCompact(createdAt)}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* ── Hero: You receive / You pay ──────────────────────────────── */}
