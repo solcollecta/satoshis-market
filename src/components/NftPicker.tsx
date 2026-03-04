@@ -1,38 +1,101 @@
 'use client';
 
-import { useState } from 'react';
-import { fetchOwnedNfts, type NftEntry } from '@/lib/opnet';
+import { useEffect, useRef, useState } from 'react';
+import { fetchOwnedNfts, fetchNftCollectionInfo, type NftEntry } from '@/lib/opnet';
+import {
+  loadCachedCollections,
+  saveCachedCollection,
+  removeCachedCollection,
+  type CachedCollection,
+} from '@/lib/nftCollections';
 
 interface Props {
-  contractAddress: string;
   walletAddress: string;
+  /** Pre-fill the contract input (e.g. from the page's token address field). */
+  initialContract?: string;
   onSelect(entry: NftEntry): void;
   onClose(): void;
 }
 
-export function NftPicker({ contractAddress, walletAddress, onSelect, onClose }: Props) {
-  const [nfts, setNfts] = useState<NftEntry[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [fetched, setFetched] = useState(false);
+export function NftPicker({ walletAddress, initialContract = '', onSelect, onClose }: Props) {
+  const [collections, setCollections] = useState<CachedCollection[]>([]);
+  const [contractInput, setContractInput] = useState(initialContract);
 
-  const handleFetch = async () => {
-    setError(null);
-    setLoading(true);
+  const [activeContract, setActiveContract] = useState('');
+  const [activeName, setActiveName]         = useState('');
+  const [nfts, setNfts]                     = useState<NftEntry[]>([]);
+  const [nftLoading, setNftLoading]         = useState(false);
+  const [nftError, setNftError]             = useState<string | null>(null);
+  const [nftFetched, setNftFetched]         = useState(false);
+
+  // Guard: only auto-load once on mount
+  const autoLoadedRef = useRef(false);
+
+  // Load saved collections on mount
+  useEffect(() => {
+    setCollections(loadCachedCollections());
+  }, []);
+
+  // Auto-load NFTs if initialContract looks valid
+  useEffect(() => {
+    if (autoLoadedRef.current) return;
+    if (!initialContract || initialContract.length < 10) return;
+    autoLoadedRef.current = true;
+    void loadNftsFor(initialContract);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const loadNftsFor = async (contract: string) => {
+    const addr = contract.trim();
+    if (!addr) return;
+    setActiveContract(addr);
+    setContractInput(addr);
+    setNftFetched(false);
+    setNftError(null);
+    setNfts([]);
+    setNftLoading(true);
     try {
-      const result = await fetchOwnedNfts(contractAddress, walletAddress);
+      const info = await fetchNftCollectionInfo(addr).catch(() => null);
+      const name = info?.name || addr.slice(0, 10) + '…';
+      setActiveName(name);
+
+      const result = await fetchOwnedNfts(addr, walletAddress);
       setNfts(result);
-      setFetched(true);
+      setNftFetched(true);
+
+      // Save to cache
+      saveCachedCollection({
+        address: addr,
+        name,
+        symbol: info?.symbol ?? '',
+        icon: info?.icon,
+        addedAt: Date.now(),
+      });
+      setCollections(loadCachedCollections());
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to fetch NFTs');
+      setNftError(e instanceof Error ? e.message : 'Failed to fetch NFTs');
+      setNftFetched(true);
     } finally {
-      setLoading(false);
+      setNftLoading(false);
+    }
+  };
+
+  const handleRemove = (address: string) => {
+    removeCachedCollection(address);
+    setCollections((prev) => prev.filter((c) => c.address !== address));
+    if (activeContract === address) {
+      setActiveContract('');
+      setActiveName('');
+      setNfts([]);
+      setNftFetched(false);
+      setNftError(null);
     }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-      <div className="bg-surface-card border border-surface-border rounded-xl p-5 w-full max-w-md mx-4 space-y-4">
+      <div className="bg-surface-card border border-surface-border rounded-xl p-5 w-full max-w-md mx-4 space-y-4 max-h-[90vh] overflow-y-auto">
+
+        {/* Header */}
         <div className="flex items-center justify-between">
           <h3 className="font-semibold text-white">Select NFT</h3>
           <button
@@ -43,64 +106,139 @@ export function NftPicker({ contractAddress, walletAddress, onSelect, onClose }:
           </button>
         </div>
 
-        <p className="text-xs text-slate-400">
-          Collection:{' '}
-          <code className="text-slate-300 break-all">{contractAddress}</code>
-        </p>
-
-        {!fetched && (
-          <button
-            onClick={handleFetch}
-            disabled={loading}
-            className="btn-secondary w-full text-sm"
-          >
-            {loading ? 'Loading NFTs…' : 'Load my NFTs in this collection'}
-          </button>
-        )}
-
-        {fetched && !loading && (
-          <button
-            onClick={handleFetch}
-            className="text-xs text-slate-500 hover:text-slate-300"
-          >
-            Refresh
-          </button>
-        )}
-
-        {error && (
-          <div className="text-sm text-red-400 bg-red-900/20 border border-red-800 rounded-lg p-3">
-            <p className="font-semibold mb-1">Could not load NFTs</p>
-            <p>{error}</p>
-            <p className="mt-2 text-slate-400">
-              If enumeration is unsupported, close this picker and enter the
-              Token ID manually.
+        {/* Saved collections */}
+        <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+          {collections.length === 0 ? (
+            <p className="text-sm text-slate-400 text-center py-4">
+              No saved collections yet. Add one below.
             </p>
-          </div>
-        )}
-
-        {fetched && nfts.length === 0 && !error && (
-          <div className="text-sm text-slate-400 text-center py-6">
-            <p>No NFTs found in this collection for your wallet.</p>
-            <p className="text-xs mt-1">
-              Close and enter the Token ID manually if you know it.
-            </p>
-          </div>
-        )}
-
-        {nfts.length > 0 && (
-          <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-            {nfts.map((nft) => (
-              <button
-                key={nft.tokenId.toString()}
-                onClick={() => onSelect(nft)}
-                className="w-full text-left bg-surface rounded-lg p-3 border border-surface-border hover:border-brand transition-colors"
+          ) : (
+            collections.map((col) => (
+              <div
+                key={col.address}
+                className={`flex items-center gap-2 bg-surface rounded-lg p-3 border transition-colors ${
+                  activeContract === col.address
+                    ? 'border-brand'
+                    : 'border-surface-border hover:border-brand'
+                }`}
               >
-                <p className="text-sm font-medium text-white">{nft.collectionName}</p>
-                <p className="text-xs text-slate-400 font-mono">
-                  Token ID: {nft.tokenId.toString()}
+                <button
+                  className="flex-1 text-left min-w-0"
+                  onClick={() => void loadNftsFor(col.address)}
+                >
+                  <div className="flex items-center gap-2">
+                    {col.icon ? (
+                      <img
+                        src={col.icon}
+                        alt=""
+                        className="w-8 h-8 rounded-lg object-cover shrink-0"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    ) : (
+                      <div className="w-8 h-8 rounded-lg bg-surface-border flex items-center justify-center text-xs text-slate-500 shrink-0">
+                        🖼
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <span className="text-sm font-semibold text-white truncate block">
+                        {col.name || 'Unknown Collection'}
+                      </span>
+                      <span className="text-xs text-slate-500 font-mono">
+                        {col.address.slice(0, 10)}…
+                      </span>
+                    </div>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleRemove(col.address)}
+                  className="text-slate-500 hover:text-red-400 text-sm px-1 shrink-0"
+                  title="Remove collection"
+                >
+                  ✕
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Add collection input */}
+        <div className="border-t border-surface-border pt-4 space-y-2">
+          <p className="text-xs text-slate-400">Add collection by contract address:</p>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="opt1sq…"
+              value={contractInput}
+              onChange={(e) => setContractInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') void loadNftsFor(contractInput); }}
+              className="flex-1"
+            />
+            <button
+              type="button"
+              onClick={() => void loadNftsFor(contractInput)}
+              disabled={nftLoading || !contractInput.trim()}
+              className="btn-secondary text-sm shrink-0 px-3"
+            >
+              {nftLoading ? '…' : 'Load NFTs'}
+            </button>
+          </div>
+        </div>
+
+        {/* NFT list — shown once a collection has been loaded */}
+        {(nftLoading || nftFetched) && (
+          <div className="border-t border-surface-border pt-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-slate-400">
+                {activeName ? `NFTs in "${activeName}"` : 'Your NFTs'}
+              </p>
+              {nftFetched && !nftLoading && (
+                <button
+                  type="button"
+                  onClick={() => void loadNftsFor(activeContract)}
+                  className="text-xs text-brand hover:underline"
+                >
+                  Refresh
+                </button>
+              )}
+            </div>
+
+            {nftLoading && (
+              <p className="text-sm text-slate-500 animate-pulse py-2">Loading NFTs…</p>
+            )}
+
+            {nftError && (
+              <div className="text-sm text-red-400 bg-red-900/20 border border-red-800 rounded-lg p-3">
+                <p className="font-semibold mb-1">Could not load NFTs</p>
+                <p>{nftError}</p>
+                <p className="mt-2 text-xs text-slate-400">
+                  Close and enter the Token ID manually if you know it.
                 </p>
-              </button>
-            ))}
+              </div>
+            )}
+
+            {nftFetched && !nftLoading && nfts.length === 0 && !nftError && (
+              <p className="text-sm text-slate-400 text-center py-4">
+                No NFTs found in this collection for your wallet.
+              </p>
+            )}
+
+            {nfts.length > 0 && (
+              <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                {nfts.map((nft) => (
+                  <button
+                    key={nft.tokenId.toString()}
+                    onClick={() => onSelect(nft)}
+                    className="w-full text-left bg-surface rounded-lg p-3 border border-surface-border hover:border-brand transition-colors"
+                  >
+                    <p className="text-sm font-medium text-white">{nft.collectionName}</p>
+                    <p className="text-xs text-slate-400 font-mono">
+                      Token ID: {nft.tokenId.toString()}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -110,6 +248,7 @@ export function NftPicker({ contractAddress, walletAddress, onSelect, onClose }:
         >
           Cancel
         </button>
+
       </div>
     </div>
   );

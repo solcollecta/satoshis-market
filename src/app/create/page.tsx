@@ -252,14 +252,13 @@ export default function CreateOfferPage() {
   // ── NFT picker ────────────────────────────────────────────────────────────
   const handleNftPickerOpen = () => {
     if (!address) { connect(); return; }
-    if (!tokenAddress) { setError('Enter the NFT contract address first.'); return; }
     setError(null);
     setNftPickerOpen(true);
   };
 
   const handleNftSelect = (entry: NftEntry) => {
     setTokenId(entry.tokenId.toString());
-    if (!tokenAddress) setTokenAddress(entry.contractAddress);
+    setTokenAddress(entry.contractAddress);
     setNftPickerOpen(false);
   };
 
@@ -409,10 +408,10 @@ export default function CreateOfferPage() {
   return (
     <>
       {/* NFT picker modal */}
-      {nftPickerOpen && address && tokenAddress && (
+      {nftPickerOpen && address && (
         <NftPicker
-          contractAddress={tokenAddress}
           walletAddress={address}
+          initialContract={tokenAddress}
           onSelect={handleNftSelect}
           onClose={() => setNftPickerOpen(false)}
         />
@@ -557,25 +556,26 @@ export default function CreateOfferPage() {
             </div>
           ) : (
             <div>
-              <div className="flex items-center justify-between mb-1">
-                <label htmlFor="token-id" className="mb-0">NFT Token ID</label>
+              <label htmlFor="token-id">NFT Token ID</label>
+              <div className="flex items-center gap-2">
+                <input
+                  id="token-id"
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="42"
+                  value={tokenId}
+                  onChange={(e) => setTokenId(e.target.value)}
+                  className="flex-1"
+                  required
+                />
                 <button
                   type="button"
                   onClick={handleNftPickerOpen}
-                  className="text-xs text-brand hover:underline shrink-0 ml-2"
+                  className="btn-secondary text-xs shrink-0 px-3 py-2"
                 >
-                  Browse my NFTs
+                  Select NFT
                 </button>
               </div>
-              <input
-                id="token-id"
-                type="text"
-                inputMode="numeric"
-                placeholder="42"
-                value={tokenId}
-                onChange={(e) => setTokenId(e.target.value)}
-                required
-              />
             </div>
           )}
 
