@@ -676,8 +676,10 @@ export async function fetchNftMetadata(
       json = await res.json() as Record<string, unknown>;
     }
 
-    const imageRaw = typeof json.image === 'string' ? json.image : undefined;
-    const imageNormalized = imageRaw ? resolveIpfsUri(imageRaw) : undefined;
+    // Store the raw image URI (ipfs:// preserved) so resolveNftImageUrls()
+    // can extract the exact CID and build the OPNet gateway URL.
+    const imageRaw = typeof json.image === 'string' ? json.image.trim() : undefined;
+    const imageNormalized = imageRaw ? resolveIpfsUri(imageRaw) : undefined; // ipfs.io fallback
 
     console.log('[fetchNftMetadata] metadata JSON', {
       tokenId: tid,
@@ -688,8 +690,9 @@ export async function fetchNftMetadata(
     });
 
     const meta: NftMetadata = {
-      name:  typeof json.name === 'string' ? json.name : undefined,
-      image: imageNormalized,
+      name:  typeof json.name === 'string' ? json.name.trim() : undefined,
+      // Store the raw URI — resolveNftImageUrls() handles OPNet gateway + fallback
+      image: imageRaw,
     };
     _nftTokenCache.set(cacheKey, meta);
     return meta;

@@ -2,40 +2,38 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * Normalise any IPFS URI variant to a list of candidate HTTP URLs to try in order.
+ * Build ordered list of gateway URLs to try for a given raw tokenURI.
  *
  * Handles:
- *   ipfs://CID/...          → [cloudflare, ipfs.io, dweb.link]
- *   ipfs://ipfs/CID/...     → same (strips redundant "ipfs/" prefix)
- *   https?://anything       → [as-is]
- *   anything else           → null (caller returns 400)
+ *   ipfs://CID/...       → 4 gateways in priority order
+ *   ipfs://ipfs/CID/...  → same (strips redundant ipfs/ prefix)
+ *   https?://...         → use as-is (single candidate)
+ *   anything else        → null → caller returns 400
  */
-function resolveToGateways(raw: string): string[] | null {
-  let cidPath: string | null = null;
-
+function buildCandidates(raw: string): string[] | null {
   if (raw.startsWith('ipfs://')) {
-    let rest = raw.slice(7); // strip "ipfs://"
-    if (rest.startsWith('ipfs/')) rest = rest.slice(5); // strip redundant "ipfs/"
-    cidPath = rest;
-  } else if (/^https?:\/\//.test(raw)) {
-    return [raw]; // already an HTTP URL — try as-is
-  } else {
-    return null; // unrecognised scheme
+    let cidPath = raw.slice(7);
+    if (cidPath.startsWith('ipfs/')) cidPath = cidPath.slice(5); // strip ipfs://ipfs/
+
+    return [
+      `https://images.opnet.org/ipfs/${cidPath}`,   // OPNet gateway — fastest
+      `https://cloudflare-ipfs.com/ipfs/${cidPath}`,
+      `https://ipfs.io/ipfs/${cidPath}`,
+      `https://dweb.link/ipfs/${cidPath}`,
+    ];
   }
 
-  return [
-    `https://cloudflare-ipfs.com/ipfs/${cidPath}`,
-    `https://ipfs.io/ipfs/${cidPath}`,
-    `https://dweb.link/ipfs/${cidPath}`,
-  ];
+  if (/^https?:\/\//.test(raw)) return [raw];
+
+  return null; // unrecognised scheme
 }
 
 /**
  * GET /api/nft-metadata?url=<encoded>
  *
- * Server-side proxy for NFT token URI metadata JSON.
- * IPFS gateways block CORS from the browser, so we fetch server-side
- * and forward the parsed JSON. Tries multiple gateways for IPFS URIs.
+ * Server-side proxy for NFT tokenURI metadata JSON.
+ * IPFS gateways CORS-block browsers; we fetch server-side and forward JSON.
+ * Tries multiple gateways in order, continuing on timeout / non-2xx / non-JSON.
  */
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -45,72 +43,62 @@ export async function GET(req: Request) {
     return Response.json({ error: 'missing url param' }, { status: 400 });
   }
 
-  const candidates = resolveToGateways(rawUrl);
+  const candidates = buildCandidates(rawUrl);
   if (!candidates) {
-    console.warn('[nft-metadata] unrecognised URL scheme', { rawUrl });
-    return Response.json({ error: `unrecognised url scheme: ${rawUrl.slice(0, 60)}` }, { status: 400 });
+    console.warn('[nft-metadata] unrecognised scheme', rawUrl.slice(0, 80));
+    return Response.json({ error: `unrecognised url scheme` }, { status: 400 });
   }
 
-  console.log('[nft-metadata] incoming', { rawUrl, candidates });
+  console.log('[nft-metadata] request', { rawUrl, candidates });
 
-  let lastErr = 'unknown error';
+  const errors: string[] = [];
 
   for (const fetchUrl of candidates) {
     try {
       console.log('[nft-metadata] trying', fetchUrl);
 
       const res = await fetch(fetchUrl, {
-        signal: AbortSignal.timeout(10_000), // 10s — IPFS gateways can be slow
+        signal: AbortSignal.timeout(20_000), // 20s — IPFS gateways are slow
         redirect: 'follow',
         headers: { Accept: 'application/json, */*' },
       });
 
       const contentType = res.headers.get('content-type') ?? '';
-      console.log('[nft-metadata] upstream response', {
-        fetchUrl,
-        status: res.status,
-        contentType,
-      });
+      console.log('[nft-metadata] response', { fetchUrl, status: res.status, contentType });
 
       if (!res.ok) {
-        let body = '';
-        try { body = (await res.text()).slice(0, 200); } catch { /* ignore */ }
-        console.error('[nft-metadata] upstream non-ok', { fetchUrl, status: res.status, body });
-        lastErr = `upstream ${res.status}: ${body}`;
-        continue; // try next gateway
+        let preview = '';
+        try { preview = (await res.text()).slice(0, 200); } catch { /* ignore */ }
+        console.warn('[nft-metadata] non-ok', { fetchUrl, status: res.status, preview });
+        errors.push(`${fetchUrl} → ${res.status}: ${preview}`);
+        continue;
       }
 
-      // Parse body — handle both JSON and text/plain that contains JSON
-      let json: unknown;
+      // Read as text first — some gateways return JSON as text/plain
       const text = await res.text();
+      let json: unknown;
       try {
         json = JSON.parse(text);
       } catch {
-        console.error('[nft-metadata] non-JSON body', {
-          fetchUrl,
-          contentType,
-          preview: text.slice(0, 200),
-        });
-        lastErr = `non-JSON response (${contentType}): ${text.slice(0, 100)}`;
-        continue; // try next gateway
+        const preview = text.slice(0, 200);
+        console.warn('[nft-metadata] non-JSON', { fetchUrl, contentType, preview });
+        errors.push(`${fetchUrl} → non-JSON (${contentType}): ${preview}`);
+        continue;
       }
 
-      console.log('[nft-metadata] success', {
-        fetchUrl,
-        keys: Object.keys(json as object),
-      });
-
+      console.log('[nft-metadata] success', { fetchUrl, keys: Object.keys(json as object) });
       return Response.json(json, {
         headers: { 'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600' },
       });
 
     } catch (err) {
-      console.error('[nft-metadata] fetch threw', { fetchUrl, err: String(err) });
-      lastErr = String(err);
+      const msg = String(err);
+      console.warn('[nft-metadata] fetch error', { fetchUrl, err: msg });
+      errors.push(`${fetchUrl} → ${msg}`);
       // continue to next gateway
     }
   }
 
-  console.error('[nft-metadata] all candidates failed', { rawUrl, lastErr });
-  return Response.json({ error: `all gateways failed: ${lastErr}` }, { status: 502 });
+  console.error('[nft-metadata] all gateways failed', { rawUrl, errors });
+  return Response.json({ error: 'all gateways failed', details: errors }, { status: 502 });
 }

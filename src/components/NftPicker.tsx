@@ -90,7 +90,7 @@ export function NftPicker({ walletAddress, initialContract = '', onSelect, onClo
           }
         }
       };
-      void Promise.all(Array.from({ length: Math.min(4, result.length) }, runWorker));
+      void Promise.all(Array.from({ length: Math.min(3, result.length) }, runWorker));
 
       // Save to cache
       saveCachedCollection({
