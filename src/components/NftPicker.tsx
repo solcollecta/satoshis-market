@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { fetchOwnedNfts, fetchNftCollectionInfo, fetchNftMetadata, type NftEntry, type NftMetadata } from '@/lib/opnet';
+import { fetchOwnedNfts, fetchNftCollectionInfo, fetchNftMetadata, clearNftTokenCache, type NftEntry, type NftMetadata } from '@/lib/opnet';
 import {
   loadCachedCollections,
   saveCachedCollection,
@@ -54,6 +54,7 @@ export function NftPicker({ walletAddress, initialContract = '', onSelect, onClo
     setActiveContract(addr);
     setContractInput(addr);
     loadIdRef.current++;  // invalidate any in-flight metadata workers for previous load
+    clearNftTokenCache(addr);  // clear stale null entries so retries fetch fresh
     setNftFetched(false);
     setNftError(null);
     setNfts([]);

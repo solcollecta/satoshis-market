@@ -521,6 +521,14 @@ const _nftCollectionCache = new Map<string, NftCollectionInfo | null>();
 /** In-memory cache keyed by "contractAddress:tokenId" */
 const _nftTokenCache = new Map<string, NftMetadata | null>();
 
+/** Clear all cached per-token metadata (e.g. to force a fresh fetch after a failed attempt). */
+export function clearNftTokenCache(contractAddress?: string): void {
+  if (!contractAddress) { _nftTokenCache.clear(); return; }
+  for (const key of _nftTokenCache.keys()) {
+    if (key.startsWith(contractAddress + ':')) _nftTokenCache.delete(key);
+  }
+}
+
 /**
  * Fetch OP-721 collection-level info (name, symbol, icon, banner) via the
  * on-chain `metadata()` call. Uses the official `OP_721_ABI` from the opnet
@@ -576,37 +584,83 @@ export async function fetchNftMetadata(
   const cacheKey = `${contractAddress}:${tokenId.toString()}`;
   if (_nftTokenCache.has(cacheKey)) return _nftTokenCache.get(cacheKey) ?? null;
 
+  const tid = tokenId.toString();
+
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const contract = getContract<any>(contractAddress, OP_721_ABI, getProvider(), OP_NETWORK);
     const result = await contract.tokenURI(tokenId);
-    if (result.revert) { _nftTokenCache.set(cacheKey, null); return null; }
 
-    const uri = String(result.properties?.uri ?? '').trim();
-    if (!uri) { _nftTokenCache.set(cacheKey, null); return null; }
+    // ── Debug: full tokenURI result ───────────────────────────────────────
+    console.log('[fetchNftMetadata] tokenURI raw result', {
+      tokenId: tid,
+      revert: result.revert,
+      properties: result.properties,
+      allKeys: result ? Object.keys(result) : [],
+    });
+
+    if (result.revert) {
+      console.warn('[fetchNftMetadata] tokenURI reverted', { tokenId: tid });
+      _nftTokenCache.set(cacheKey, null);
+      return null;
+    }
+
+    // Try both 'uri' and 'tokenURI' property names defensively
+    const rawUri =
+      result.properties?.uri ??
+      result.properties?.tokenURI ??
+      result.properties?.value ??
+      '';
+    const uri = String(rawUri).trim();
+
+    console.log('[fetchNftMetadata] tokenURI extracted', {
+      tokenId: tid,
+      rawUri,
+      uri,
+      normalizedUri: uri ? resolveIpfsUri(uri) : '',
+    });
+
+    if (!uri) {
+      console.warn('[fetchNftMetadata] empty URI', { tokenId: tid });
+      _nftTokenCache.set(cacheKey, null);
+      return null;
+    }
 
     let json: Record<string, unknown>;
     if (uri.startsWith('data:application/json')) {
-      // Inline JSON — no network fetch needed
       const [, payload] = uri.split(',');
       const decoded = uri.includes(';base64,') ? atob(payload) : decodeURIComponent(payload);
       json = JSON.parse(decoded) as Record<string, unknown>;
     } else {
-      // Route through server-side proxy to avoid CORS blocks on IPFS gateways.
-      // The proxy handles ipfs:// → https gateway resolution.
       const proxyUrl = `/api/nft-metadata?url=${encodeURIComponent(uri)}`;
+      console.log('[fetchNftMetadata] fetching via proxy', { tokenId: tid, proxyUrl });
       const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
-      if (!res.ok) throw new Error(`proxy ${res.status}`);
+      if (!res.ok) {
+        console.error('[fetchNftMetadata] proxy error', { tokenId: tid, status: res.status });
+        throw new Error(`proxy ${res.status}`);
+      }
       json = await res.json() as Record<string, unknown>;
     }
 
+    const imageRaw = typeof json.image === 'string' ? json.image : undefined;
+    const imageNormalized = imageRaw ? resolveIpfsUri(imageRaw) : undefined;
+
+    console.log('[fetchNftMetadata] metadata JSON', {
+      tokenId: tid,
+      metadataKeys: Object.keys(json),
+      name: json.name,
+      imageRaw,
+      imageNormalized,
+    });
+
     const meta: NftMetadata = {
-      name:  typeof json.name  === 'string' ? json.name  : undefined,
-      image: typeof json.image === 'string' ? resolveIpfsUri(json.image) : undefined,
+      name:  typeof json.name === 'string' ? json.name : undefined,
+      image: imageNormalized,
     };
     _nftTokenCache.set(cacheKey, meta);
     return meta;
-  } catch {
+  } catch (err) {
+    console.error('[fetchNftMetadata] failed', { tokenId: tid, err });
     _nftTokenCache.set(cacheKey, null);
     return null;
   }
