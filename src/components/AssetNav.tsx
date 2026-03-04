@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 
 const TABS = [
   { label: 'All Assets',      href: '/assets' },
-  { label: 'NFT Collections', href: '/collections' },
+  { label: 'OP-721 NFTs',      href: '/collections' },
   { label: 'OP-20 Coins',     href: '/tokens' },
 ] as const;
 

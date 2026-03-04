@@ -19,7 +19,13 @@
       "Bash(find:*)",
       "Bash(xargs cat:*)",
       "Bash(xargs ls:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(rsync:*)",
+      "Bash(robocopy C:\\\\Users\\\\Erdem\\\\atomic-swap-escrow-web-sandbox:*)",
+      "Bash(cmd.exe:*)",
+      "Bash(powershell.exe:*)",
+      "Bash(gh api:*)",
+      "WebFetch(domain:satoshis-market.vercel.app)"
     ]
   }
 }
