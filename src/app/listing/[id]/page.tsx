@@ -8,7 +8,7 @@ import {
   simulateEscrowWrite,
   calcFeeSats,
   formatBtcFromSats,
-  getOpscanTxUrl,
+  getOpscanAddressUrl,
   fetchTokenInfo,
   fetchNftMetadata,
   fetchNftCollectionInfo,
@@ -283,7 +283,6 @@ export default function OfferDetailPage({
   const feeSats = calcFeeSats(offer.btcSatoshis, offer.feeBps);
   const totalRequired = offer.btcSatoshis + (feeRecipientKey === 0n ? 0n : feeSats);
   const createdAt = getListingTimestamp(id);
-  const createPendingTxid = getPendingTxs().find(t => t.type === 'create' && t.offerId === id)?.txid ?? null;
 
   const buyLabel = offer.isNFT
     ? `Buy NFT · ${formatBtcFromSats(totalRequired)}`
@@ -411,15 +410,31 @@ export default function OfferDetailPage({
           value={(() => {
             try {
               const bech32 = hex32ToP2TRAddress(keyToHex(offer.btcRecipientKey));
-              return <CopyableAddress full={bech32} orange />;
+              return (
+                <span className="flex items-center gap-2 flex-wrap">
+                  <CopyableAddress full={bech32} orange />
+                  <a href={getOpscanAddressUrl(bech32)} target="_blank" rel="noopener noreferrer"
+                    className="text-[10px] font-semibold text-brand border border-brand/30 px-1.5 py-0.5 rounded hover:bg-brand/10 transition-colors shrink-0">
+                    OPScan
+                  </a>
+                </span>
+              );
             } catch {
               return <CopyableAddress full={offer.maker} orange />;
             }
           })()}
         />
         <Field
-          label="Token contract"
-          value={<CopyableAddress full={offer.token} orange />}
+          label={offer.isNFT ? 'Collection contract' : 'Token contract'}
+          value={
+            <span className="flex items-center gap-2 flex-wrap">
+              <CopyableAddress full={offer.token} orange />
+              <a href={getOpscanAddressUrl(offer.token)} target="_blank" rel="noopener noreferrer"
+                className="text-[10px] font-semibold text-brand border border-brand/30 px-1.5 py-0.5 rounded hover:bg-brand/10 transition-colors shrink-0">
+                OPScan
+              </a>
+            </span>
+          }
         />
 
         <Field
@@ -505,75 +520,6 @@ export default function OfferDetailPage({
         </div>
       )}
 
-      {/* Transaction Details */}
-      <div className="card space-y-4">
-        <h2 className="text-sm font-semibold text-white">Transaction Details</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-
-          <Field
-            label="Seller"
-            value={(() => {
-              try {
-                return <CopyableAddress full={hex32ToP2TRAddress(keyToHex(offer.btcRecipientKey))} orange />;
-              } catch {
-                return <CopyableAddress full={offer.maker} orange />;
-              }
-            })()}
-          />
-
-          {createPendingTxid && (
-            <Field
-              label="Created transaction"
-              value={
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-xs text-slate-400">
-                    {createPendingTxid.slice(0, 12)}…{createPendingTxid.slice(-8)}
-                  </span>
-                  <a href={getOpscanTxUrl(createPendingTxid)} target="_blank" rel="noopener noreferrer"
-                    className="text-xs text-brand hover:underline shrink-0">
-                    OPScan →
-                  </a>
-                </div>
-              }
-            />
-          )}
-
-          {fillFlow.state.txid && (
-            <Field
-              label="Fill transaction"
-              value={
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-xs text-slate-400">
-                    {fillFlow.state.txid.slice(0, 12)}…{fillFlow.state.txid.slice(-8)}
-                  </span>
-                  <a href={getOpscanTxUrl(fillFlow.state.txid)} target="_blank" rel="noopener noreferrer"
-                    className="text-xs text-brand hover:underline shrink-0">
-                    OPScan →
-                  </a>
-                </div>
-              }
-            />
-          )}
-
-          {cancelFlow.state.txid && (
-            <Field
-              label="Cancel transaction"
-              value={
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-xs text-slate-400">
-                    {cancelFlow.state.txid.slice(0, 12)}…{cancelFlow.state.txid.slice(-8)}
-                  </span>
-                  <a href={getOpscanTxUrl(cancelFlow.state.txid)} target="_blank" rel="noopener noreferrer"
-                    className="text-xs text-brand hover:underline shrink-0">
-                    OPScan →
-                  </a>
-                </div>
-              }
-            />
-          )}
-
-        </div>
-      </div>
 
       {/* Contract reference */}
       {CONTRACT_ADDRESS && (

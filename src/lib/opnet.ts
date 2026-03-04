@@ -76,6 +76,11 @@ export function getOpscanTxUrl(txHash: string): string {
   return `https://opscan.org/transactions/${txHash}?network=${OPSCAN_NETWORK}`;
 }
 
+/** Build an OPScan address URL. https://opscan.org/address/<address>?network=<slug> */
+export function getOpscanAddressUrl(address: string): string {
+  return `https://opscan.org/address/${address}?network=${OPSCAN_NETWORK}`;
+}
+
 // ── Transaction receipt helper ────────────────────────────────────────────────
 
 /**
