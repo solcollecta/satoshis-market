@@ -269,17 +269,19 @@ export function NftPicker({ walletAddress, initialContract = '', onSelect, onClo
                     <button
                       key={tid}
                       onClick={() => onSelect(nft)}
-                      className="w-full text-left bg-surface rounded-lg p-3 border border-surface-border hover:border-brand transition-colors flex items-center gap-3"
+                      className="w-full text-left bg-surface rounded-lg p-2.5 border border-surface-border hover:border-brand transition-colors flex items-center gap-3 min-w-0"
                     >
-                      {/* Thumbnail */}
-                      <div className="w-14 h-14 rounded-lg overflow-hidden shrink-0 bg-surface-border flex items-center justify-center">
+                      {/* Fixed-size thumbnail — never grows */}
+                      <div className="w-12 h-12 shrink-0 rounded-lg overflow-hidden bg-surface-card/60 flex items-center justify-center">
                         {imgLoading ? (
                           <div className="w-full h-full skeleton" />
                         ) : resolved ? (
                           <img
                             src={resolved.primary}
-                            alt={`#${tid}`}
-                            className="w-full h-full object-cover"
+                            alt=""
+                            className="w-full h-full object-cover block"
+                            loading="lazy"
+                            decoding="async"
                             onError={(e) => {
                               const el = e.target as HTMLImageElement;
                               if (resolved.fallback && el.src !== resolved.fallback) {
@@ -290,15 +292,15 @@ export function NftPicker({ walletAddress, initialContract = '', onSelect, onClo
                             }}
                           />
                         ) : (
-                          <span className="text-2xl text-slate-600">🖼</span>
+                          <span className="text-lg text-slate-600">🖼</span>
                         )}
                       </div>
-                      {/* Info */}
-                      <div className="min-w-0">
+                      {/* Text — truncates, never pushes layout */}
+                      <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-white truncate">
                           {meta?.name ?? nft.collectionName} #{tid}
                         </p>
-                        <p className="text-xs text-slate-500 font-mono mt-0.5">
+                        <p className="text-xs text-slate-500 font-mono truncate mt-0.5">
                           Token ID: {tid}
                         </p>
                       </div>
