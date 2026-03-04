@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { fetchTokenInfo } from '@/lib/opnet';
+import { TokenAvatar } from './TokenAvatar';
 import {
   loadCachedTokens,
   saveCachedToken,
@@ -124,8 +125,9 @@ export function TokenPicker({ walletAddress, onSelect, onClose }: Props) {
               key={row.address}
               className="flex items-center gap-2 bg-surface rounded-lg p-3 border border-surface-border hover:border-brand transition-colors"
             >
-              <button className="flex-1 text-left" onClick={() => handleSelect(row)}>
+              <button className="flex-1 text-left min-w-0" onClick={() => handleSelect(row)}>
                 <div className="flex items-center gap-2">
+                  <TokenAvatar address={row.address} symbol={row.symbol} size="sm" />
                   <span className="text-sm font-semibold text-white">{row.symbol}</span>
                   <span className="text-xs text-slate-400">{row.name}</span>
                   <span className="text-xs text-slate-500 font-mono ml-auto">

@@ -15,6 +15,7 @@ import {
   type NftCollectionInfo,
 } from '@/lib/opnet';
 import { CopyableAddress } from './CopyableAddress';
+import { TokenAvatar } from './TokenAvatar';
 import { formatRelativeTime, formatTokenCompact } from '@/lib/tokens';
 import { useWallet } from '@/context/WalletContext';
 
@@ -137,7 +138,7 @@ export function OfferCard({ offer, createdAt }: Props) {
                 <p className="text-sm text-slate-600 italic">loading…</p>
               )}
             </div>
-            <span className="text-3xl opacity-20">🪙</span>
+            <TokenAvatar address={offer.token} symbol={tokenMeta?.symbol ?? ''} size="lg" />
           </div>
         </div>
       )}

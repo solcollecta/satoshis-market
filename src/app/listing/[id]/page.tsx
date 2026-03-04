@@ -27,6 +27,7 @@ import type { Offer, OfferStatusCode } from '@/types/offer';
 import { OFFER_STATUS } from '@/types/offer';
 import { Field } from '@/components/Field';
 import { CopyableAddress } from '@/components/CopyableAddress';
+import { TokenAvatar } from '@/components/TokenAvatar';
 import { FillProgress } from '@/components/FillProgress';
 import { CancelProgress } from '@/components/CancelProgress';
 import { useWallet } from '@/context/WalletContext';
@@ -362,19 +363,24 @@ export default function OfferDetailPage({
               </>
             ) : (
               <>
-                <p
-                  className="text-3xl font-bold text-white cursor-default leading-none"
-                  title={
-                    tokenInfo
-                      ? `${formatUnits(offer.tokenAmount, tokenInfo.decimals)} ${tokenInfo.symbol}`
-                      : offer.tokenAmount.toString()
-                  }
-                >
-                  {tokenInfo ? formatTokenCompact(offer.tokenAmount, tokenInfo.decimals) : '—'}
-                </p>
-                <p className="text-sm text-slate-500 mt-2">
-                  {tokenInfo?.symbol ?? <span className="text-slate-600 italic text-xs">loading…</span>}
-                </p>
+                <div className="flex items-center gap-3 mb-3">
+                  <TokenAvatar address={offer.token} symbol={tokenInfo?.symbol ?? ''} size="lg" />
+                  <div>
+                    <p
+                      className="text-3xl font-bold text-white cursor-default leading-none"
+                      title={
+                        tokenInfo
+                          ? `${formatUnits(offer.tokenAmount, tokenInfo.decimals)} ${tokenInfo.symbol}`
+                          : offer.tokenAmount.toString()
+                      }
+                    >
+                      {tokenInfo ? formatTokenCompact(offer.tokenAmount, tokenInfo.decimals) : '—'}
+                    </p>
+                    <p className="text-sm text-slate-500 mt-1">
+                      {tokenInfo?.symbol ?? <span className="text-slate-600 italic text-xs">loading…</span>}
+                    </p>
+                  </div>
+                </div>
               </>
             )}
           </div>
