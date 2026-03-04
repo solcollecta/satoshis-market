@@ -319,10 +319,26 @@ export default function OfferDetailPage({
   return (
     <div className="max-w-2xl mx-auto space-y-6 pt-2">
 
-      {/* Back */}
-      <Link href="/assets" className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-white transition-colors">
-        ← All listings
-      </Link>
+      {/* Back + collection filter */}
+      <div className="flex items-center justify-between">
+        <Link href="/assets" className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-white transition-colors">
+          ← All listings
+        </Link>
+        {(() => {
+          const label = offer.isNFT
+            ? (nftCollection?.name ?? null)
+            : (tokenInfo?.symbol ? `$${tokenInfo.symbol}` : null);
+          if (!label) return null;
+          return (
+            <Link
+              href={`/assets?token=${encodeURIComponent(offer.token)}`}
+              className="inline-flex items-center gap-1 text-sm text-brand hover:underline"
+            >
+              All {label} Listings →
+            </Link>
+          );
+        })()}
+      </div>
 
       {/* Header */}
       <div className="flex items-start justify-between gap-4">

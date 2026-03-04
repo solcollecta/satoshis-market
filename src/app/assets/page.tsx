@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   listOffers,
   getWalletOpnetAddressHex,
@@ -28,11 +29,12 @@ const STATUS_OPTIONS: { key: StatusKey; label: string }[] = [
 
 export default function AssetsPage() {
   const { address } = useWallet();
+  const searchParams = useSearchParams();
   const [offers, setOffers]   = useState<Offer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState<string | null>(null);
 
-  const [search, setSearch]     = useState('');
+  const [search, setSearch]     = useState(searchParams.get('token') ?? '');
   const [filter, setFilter]     = useState<Filter>('all');
   const [sort, setSort]         = useState<Sort>('id_desc');
   const [statusFilters, setStatusFilters] = useState<Set<StatusKey>>(new Set(['open']));
