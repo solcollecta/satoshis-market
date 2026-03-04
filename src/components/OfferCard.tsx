@@ -16,7 +16,7 @@ import {
 } from '@/lib/opnet';
 import { CopyableAddress } from './CopyableAddress';
 import { TokenAvatar } from './TokenAvatar';
-import { formatRelativeTime, formatTokenCompact } from '@/lib/tokens';
+import { formatRelativeCompact, formatTokenCompact } from '@/lib/tokens';
 import { useWallet } from '@/context/WalletContext';
 
 // ── Status style map ──────────────────────────────────────────────────────────
@@ -225,7 +225,9 @@ export function OfferCard({ offer, createdAt }: Props) {
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {createdAt != null && (
-              <span>{formatRelativeTime(createdAt)}</span>
+              <span>
+                {offer.status === 2 ? 'Sold' : 'Listed'} {formatRelativeCompact(createdAt)}
+              </span>
             )}
             <div className="relative group/dots">
               <div className="absolute bottom-full right-0 mb-2 px-2.5 py-1 bg-surface-card border border-brand/40 rounded-lg text-[11px] font-bold text-brand tracking-widest whitespace-nowrap opacity-0 group-hover/dots:opacity-100 transition-opacity duration-150 pointer-events-none">
