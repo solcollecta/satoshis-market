@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -36,7 +36,15 @@ const STATUS_OPTIONS: { key: StatusKey; label: string }[] = [
   { key: 'private',   label: 'Private'   },
 ];
 
-export default function AssetsPage() {
+export default function AssetsPageWrapper() {
+  return (
+    <Suspense>
+      <AssetsPage />
+    </Suspense>
+  );
+}
+
+function AssetsPage() {
   const { address } = useWallet();
   const searchParams = useSearchParams();
   const [offers, setOffers]   = useState<Offer[]>([]);

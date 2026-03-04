@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useWallet } from '@/context/WalletContext';
 import {
@@ -32,7 +32,15 @@ const PLATFORM_FEE_BPS = 50;
 // Minimum sats for any single Bitcoin output (OPNet safety threshold).
 const DUST_THRESHOLD = 546n;
 
-export default function CreateOfferPage() {
+export default function CreateOfferPageWrapper() {
+  return (
+    <Suspense>
+      <CreateOfferPage />
+    </Suspense>
+  );
+}
+
+function CreateOfferPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { address, connect, provider } = useWallet();
