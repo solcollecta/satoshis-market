@@ -573,7 +573,7 @@ export default function CreateOfferPage() {
                   onClick={handleNftPickerOpen}
                   className="btn-secondary text-xs shrink-0 px-3 py-2"
                 >
-                  Select NFT
+                  Select from your wallet
                 </button>
               </div>
             </div>
