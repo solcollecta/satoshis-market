@@ -23,6 +23,7 @@ export function NftPicker({ walletAddress, initialContract = '', onSelect, onClo
 
   const [activeContract, setActiveContract] = useState('');
   const [activeName, setActiveName]         = useState('');
+  const [collectionIcon, setCollectionIcon] = useState<string | undefined>(undefined);
   const [nfts, setNfts]                     = useState<NftEntry[]>([]);
   const [nftLoading, setNftLoading]         = useState(false);
   const [nftError, setNftError]             = useState<string | null>(null);
@@ -59,11 +60,13 @@ export function NftPicker({ walletAddress, initialContract = '', onSelect, onClo
     setNftError(null);
     setNfts([]);
     setNftMeta(new Map());
+    setCollectionIcon(undefined);
     setNftLoading(true);
     try {
       const info = await fetchNftCollectionInfo(addr).catch(() => null);
       const name = info?.name || addr.slice(0, 10) + '…';
       setActiveName(name);
+      setCollectionIcon(info?.icon);
 
       const result = await fetchOwnedNfts(addr, walletAddress);
       setNfts(result);
@@ -259,7 +262,9 @@ export function NftPicker({ walletAddress, initialContract = '', onSelect, onClo
                   const tid = nft.tokenId.toString();
                   const meta = nftMeta.get(tid);   // undefined = still loading, null = fetched/no image
                   const imgLoading = !nftMeta.has(tid);
-                  const resolved = meta?.image ? resolveNftImageUrls(meta.image) : null;
+                  // Per-token image if loaded, else fall back to collection icon — same as listing page
+                  const rawImage = meta?.image ?? collectionIcon;
+                  const resolved = rawImage ? resolveNftImageUrls(rawImage) : null;
                   return (
                     <button
                       key={tid}
