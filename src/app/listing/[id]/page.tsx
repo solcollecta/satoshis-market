@@ -7,8 +7,8 @@ import {
   simulateFillOffer,
   simulateEscrowWrite,
   calcFeeSats,
-  formatSats,
   formatBtcFromSats,
+  getOpscanTxUrl,
   fetchTokenInfo,
   fetchNftMetadata,
   fetchNftCollectionInfo,
@@ -22,7 +22,7 @@ import {
   OP_NETWORK,
 } from '@/lib/opnet';
 import type { TokenInfo, NftMetadata, NftCollectionInfo } from '@/lib/opnet';
-import { formatTokenCompact, formatUnits } from '@/lib/tokens';
+import { formatTokenCompact, formatUnits, getListingTimestamp, formatRelativeCompact } from '@/lib/tokens';
 import type { Offer, OfferStatusCode } from '@/types/offer';
 import { OFFER_STATUS } from '@/types/offer';
 import { Field } from '@/components/Field';
@@ -282,7 +282,8 @@ export default function OfferDetailPage({
 
   const feeSats = calcFeeSats(offer.btcSatoshis, offer.feeBps);
   const totalRequired = offer.btcSatoshis + (feeRecipientKey === 0n ? 0n : feeSats);
-  const fillReqs = buildFillRequirements(offer, feeRecipientKey);
+  const createdAt = getListingTimestamp(id);
+  const createPendingTxid = getPendingTxs().find(t => t.type === 'create' && t.offerId === id)?.txid ?? null;
 
   const buyLabel = offer.isNFT
     ? `Buy NFT · ${formatBtcFromSats(totalRequired)}`
@@ -330,6 +331,11 @@ export default function OfferDetailPage({
           </p>
           <h1 className="text-2xl font-bold text-white tracking-tight">
             Listing <span className="text-brand">#{offer.id.toString()}</span>
+            {createdAt != null && (
+              <span className="text-sm font-normal text-slate-500 ml-3">
+                {offer.status === 2 ? 'Sold' : 'Listed'} {formatRelativeCompact(createdAt)}
+              </span>
+            )}
           </h1>
         </div>
         <span className={`shrink-0 text-[11px] font-semibold px-3 py-1 rounded-full ${STATUS_STYLES[offer.status]}`}>
@@ -499,62 +505,75 @@ export default function OfferDetailPage({
         </div>
       )}
 
-      {/* Transaction details — collapsible */}
-      {isOpen && (
-        <details className="card border-surface-border group">
-          <summary className="cursor-pointer select-none text-sm font-semibold text-slate-500 hover:text-white transition-colors list-none flex items-center gap-2">
-            <span className="text-slate-700 group-open:rotate-90 transition-transform duration-150 inline-block">▶</span>
-            Transaction Details
-          </summary>
+      {/* Transaction Details */}
+      <div className="card space-y-4">
+        <h2 className="text-sm font-semibold text-white">Transaction Details</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
-          <div className="mt-5 space-y-4">
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Your Bitcoin transaction <span className="text-slate-300 font-medium">must</span> include
-              the following P2TR outputs so the contract can verify payment during simulation:
-            </p>
+          <Field
+            label="Seller"
+            value={(() => {
+              try {
+                return <CopyableAddress full={hex32ToP2TRAddress(keyToHex(offer.btcRecipientKey))} orange />;
+              } catch {
+                return <CopyableAddress full={offer.maker} orange />;
+              }
+            })()}
+          />
 
-            <div className="bg-surface rounded-xl p-4 border border-surface-border">
-              <p className="text-[10px] font-semibold text-slate-600 uppercase tracking-widest mb-3">
-                Output 1 — Seller payment
-                {fillReqs.feeOutput === null && offer.feeBps > 0 ? ' (includes fee)' : ''}
-              </p>
-              <div className="space-y-2">
-                <div className="flex gap-3 text-xs">
-                  <span className="text-slate-600 w-24 shrink-0">scriptPubKey</span>
-                  <span className="font-mono text-brand break-all">{fillReqs.makerOutput.script}</span>
+          {createPendingTxid && (
+            <Field
+              label="Created transaction"
+              value={
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-xs text-slate-400">
+                    {createPendingTxid.slice(0, 12)}…{createPendingTxid.slice(-8)}
+                  </span>
+                  <a href={getOpscanTxUrl(createPendingTxid)} target="_blank" rel="noopener noreferrer"
+                    className="text-xs text-brand hover:underline shrink-0">
+                    OPScan →
+                  </a>
                 </div>
-                <div className="flex gap-3 text-xs">
-                  <span className="text-slate-600 w-24 shrink-0">min value</span>
-                  <span className="font-mono text-emerald-400">{formatSats(fillReqs.makerOutput.minSats)}</span>
-                </div>
-              </div>
-            </div>
+              }
+            />
+          )}
 
-            {fillReqs.feeOutput && (
-              <div className="bg-surface rounded-xl p-4 border border-surface-border">
-                <p className="text-[10px] font-semibold text-slate-600 uppercase tracking-widest mb-3">
-                  Output 2 — Platform fee
-                </p>
-                <div className="space-y-2">
-                  <div className="flex gap-3 text-xs">
-                    <span className="text-slate-600 w-24 shrink-0">scriptPubKey</span>
-                    <span className="font-mono text-brand break-all">{fillReqs.feeOutput.script}</span>
-                  </div>
-                  <div className="flex gap-3 text-xs">
-                    <span className="text-slate-600 w-24 shrink-0">min value</span>
-                    <span className="font-mono text-emerald-400">{formatSats(fillReqs.feeOutput.minSats)}</span>
-                  </div>
+          {fillFlow.state.txid && (
+            <Field
+              label="Fill transaction"
+              value={
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-xs text-slate-400">
+                    {fillFlow.state.txid.slice(0, 12)}…{fillFlow.state.txid.slice(-8)}
+                  </span>
+                  <a href={getOpscanTxUrl(fillFlow.state.txid)} target="_blank" rel="noopener noreferrer"
+                    className="text-xs text-brand hover:underline shrink-0">
+                    OPScan →
+                  </a>
                 </div>
-              </div>
-            )}
+              }
+            />
+          )}
 
-            <p className="text-xs text-slate-700">
-              Format:{' '}
-              <code className="text-slate-600">5120{'<'}32-byte tweaked pubkey{'>'}</code>
-            </p>
-          </div>
-        </details>
-      )}
+          {cancelFlow.state.txid && (
+            <Field
+              label="Cancel transaction"
+              value={
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-xs text-slate-400">
+                    {cancelFlow.state.txid.slice(0, 12)}…{cancelFlow.state.txid.slice(-8)}
+                  </span>
+                  <a href={getOpscanTxUrl(cancelFlow.state.txid)} target="_blank" rel="noopener noreferrer"
+                    className="text-xs text-brand hover:underline shrink-0">
+                    OPScan →
+                  </a>
+                </div>
+              }
+            />
+          )}
+
+        </div>
+      </div>
 
       {/* Contract reference */}
       {CONTRACT_ADDRESS && (
