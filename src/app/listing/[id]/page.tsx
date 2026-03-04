@@ -365,21 +365,18 @@ export default function OfferDetailPage({
               <>
                 <div className="flex items-center gap-3 mb-3">
                   <TokenAvatar address={offer.token} symbol={tokenInfo?.symbol ?? ''} size="lg" />
-                  <div>
-                    <p
-                      className="text-3xl font-bold text-white cursor-default leading-none"
-                      title={
-                        tokenInfo
-                          ? `${formatUnits(offer.tokenAmount, tokenInfo.decimals)} ${tokenInfo.symbol}`
-                          : offer.tokenAmount.toString()
-                      }
-                    >
-                      {tokenInfo ? formatTokenCompact(offer.tokenAmount, tokenInfo.decimals) : '—'}
-                    </p>
-                    <p className="text-sm text-slate-500 mt-1">
-                      {tokenInfo?.symbol ?? <span className="text-slate-600 italic text-xs">loading…</span>}
-                    </p>
-                  </div>
+                  <p
+                    className="text-3xl font-bold text-white cursor-default leading-none"
+                    title={
+                      tokenInfo
+                        ? `${formatUnits(offer.tokenAmount, tokenInfo.decimals)} ${tokenInfo.symbol}`
+                        : offer.tokenAmount.toString()
+                    }
+                  >
+                    {tokenInfo
+                      ? `${formatTokenCompact(offer.tokenAmount, tokenInfo.decimals)} $${tokenInfo.symbol}`
+                      : '—'}
+                  </p>
                 </div>
               </>
             )}

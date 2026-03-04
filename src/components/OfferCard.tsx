@@ -130,15 +130,13 @@ export function OfferCard({ offer, createdAt }: Props) {
         </div>
       ) : (
         <div className="px-4 pt-4">
-          <div className="w-full h-20 rounded-xl bg-surface border border-surface-border flex items-center justify-between px-5">
-            <div>
-              {amountStr ? (
-                <p className="text-2xl font-bold text-white tracking-tight">{amountStr}</p>
-              ) : (
-                <p className="text-sm text-slate-600 italic">loading…</p>
-              )}
-            </div>
+          <div className="w-full h-20 rounded-xl bg-surface border border-surface-border flex items-center gap-4 px-5">
             <TokenAvatar address={offer.token} symbol={tokenMeta?.symbol ?? ''} size="lg" />
+            {amountStr ? (
+              <p className="text-2xl font-bold text-white tracking-tight">{amountStr}</p>
+            ) : (
+              <p className="text-sm text-slate-600 italic">loading…</p>
+            )}
           </div>
         </div>
       )}
