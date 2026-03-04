@@ -258,9 +258,11 @@ export function TxProgress({ state, mode, onApprove, onCreate, onReset, onCheckA
               {elapsed > 0 ? `${elapsed}s elapsed · ` : ''}
               Checking every 5 seconds. This can take a few minutes — please be patient.
             </p>
-            <button type="button" onClick={onCheckCreateStatus} className="btn-secondary text-sm w-full">
-              Recheck Status
-            </button>
+            {elapsed >= 600 && (
+              <button type="button" onClick={onCheckCreateStatus} className="btn-secondary text-sm w-full">
+                Recheck Status
+              </button>
+            )}
           </>
         )}
 
