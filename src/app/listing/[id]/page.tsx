@@ -28,7 +28,7 @@ import type { TokenInfo, NftMetadata, NftCollectionInfo } from '@/lib/opnet';
 import { formatTokenCompact, formatUnits, getListingTimestamp, formatRelativeCompact } from '@/lib/tokens';
 import type { Offer, OfferStatusCode } from '@/types/offer';
 import { OFFER_STATUS } from '@/types/offer';
-import { Field } from '@/components/Field';
+import { DetailsGrid, DCell } from '@/components/DetailsGrid';
 import { CopyableAddress } from '@/components/CopyableAddress';
 import { TokenAvatar } from '@/components/TokenAvatar';
 import { FillProgress } from '@/components/FillProgress';
@@ -318,7 +318,7 @@ export default function OfferDetailPage({
     : `NFT #${offer.tokenId.toString()}`;
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6 pt-2">
+    <div className="max-w-2xl mx-auto space-y-5 pt-2">
 
       {/* Back + collection filter */}
       <div className="flex items-center justify-between">
@@ -352,9 +352,11 @@ export default function OfferDetailPage({
           </h1>
         </div>
         <div className="flex flex-col items-end gap-1.5 shrink-0">
-          <span className={`text-[11px] font-semibold px-3 py-1 rounded-full ${STATUS_STYLES[offer.status]}`}>
-            {OFFER_STATUS[offer.status]}
-          </span>
+          {offer.status !== 1 && (
+            <span className={`text-[11px] font-semibold px-3 py-1 rounded-full ${STATUS_STYLES[offer.status]}`}>
+              {OFFER_STATUS[offer.status]}
+            </span>
+          )}
           {createdAt != null && (
             <span className="text-[11px] text-slate-500">
               {offer.status === 2 ? 'Sold' : 'Listed'} {formatRelativeCompact(createdAt)}
@@ -363,12 +365,12 @@ export default function OfferDetailPage({
         </div>
       </div>
 
-      {/* ── Hero: You receive / You pay ──────────────────────────────── */}
-      <div className="card">
-        <div className="grid grid-cols-2 gap-6">
-          {/* You receive */}
-          <div>
-            <p className="section-label mb-4">You receive</p>
+      {/* ── Single card ───────────────────────────────────────────────── */}
+      <div className="card space-y-5">
+
+        {/* Hero: You receive | You pay */}
+        <DetailsGrid>
+          <DCell label="You receive" hero>
             {offer.isNFT ? (
               <>
                 {(() => {
@@ -394,29 +396,24 @@ export default function OfferDetailPage({
                 </p>
               </>
             ) : (
-              <>
-                <div className="flex items-center gap-3 mb-3">
-                  <TokenAvatar address={offer.token} symbol={tokenInfo?.symbol ?? ''} size="lg" />
-                  <p
-                    className="text-3xl font-bold text-white cursor-default leading-none"
-                    title={
-                      tokenInfo
-                        ? `${formatUnits(offer.tokenAmount, tokenInfo.decimals)} ${tokenInfo.symbol}`
-                        : offer.tokenAmount.toString()
-                    }
-                  >
-                    {tokenInfo
-                      ? `${formatTokenCompact(offer.tokenAmount, tokenInfo.decimals)} $${tokenInfo.symbol}`
-                      : '—'}
-                  </p>
-                </div>
-              </>
+              <div className="flex items-start gap-3">
+                <TokenAvatar address={offer.token} symbol={tokenInfo?.symbol ?? ''} size="lg" />
+                <p
+                  className="text-3xl font-bold text-white cursor-default leading-none"
+                  title={
+                    tokenInfo
+                      ? `${formatUnits(offer.tokenAmount, tokenInfo.decimals)} ${tokenInfo.symbol}`
+                      : offer.tokenAmount.toString()
+                  }
+                >
+                  {tokenInfo
+                    ? `${formatTokenCompact(offer.tokenAmount, tokenInfo.decimals)} $${tokenInfo.symbol}`
+                    : '—'}
+                </p>
+              </div>
             )}
-          </div>
-
-          {/* You pay */}
-          <div className="border-l border-surface-border pl-6">
-            <p className="section-label mb-4">You pay</p>
+          </DCell>
+          <DCell label="You pay" hero bordered>
             <p className="text-3xl font-bold text-white leading-none">{formatBtcFromSats(offer.btcSatoshis)}</p>
             <p className="text-xs text-slate-600 font-mono mt-2">
               {offer.btcSatoshis.toLocaleString()} sats
@@ -426,134 +423,102 @@ export default function OfferDetailPage({
                 + {formatBtcFromSats(feeSats)} platform fee
               </p>
             )}
-          </div>
-        </div>
-      </div>
+          </DCell>
+        </DetailsGrid>
 
-      {/* Details */}
-      <div className="card grid grid-cols-1 sm:grid-cols-2 gap-5">
-        <Field
-          label="Seller"
-          value={(() => {
-            try {
-              const bech32 = hex32ToP2TRAddress(keyToHex(offer.btcRecipientKey));
-              return (
-                <span className="flex items-center gap-2 flex-wrap">
-                  <CopyableAddress full={bech32} orange />
-                  <a href={getOpscanAccountUrl(bech32)} target="_blank" rel="noopener noreferrer"
-                    className="text-[10px] font-semibold text-brand hover:underline shrink-0">
-                    OPScan
-                  </a>
-                </span>
-              );
-            } catch {
-              return <CopyableAddress full={offer.maker} orange />;
-            }
-          })()}
-        />
-        <Field
-          label={offer.isNFT ? 'Collection contract' : 'Token contract'}
-          value={
-            <span className="flex items-center gap-2 flex-wrap">
-              <CopyableAddress full={offer.token} orange />
-              <a href={offer.isNFT ? getOpscanContractUrl(offer.token) : getOpscanTokenUrl(offer.token)} target="_blank" rel="noopener noreferrer"
-                className="text-[10px] font-semibold text-brand hover:underline shrink-0">
-                OPScan
-              </a>
-            </span>
-          }
-        />
+        <div className="border-t border-surface-border" />
 
-        <Field
-          label="Private buyer"
-          value={
-            hasAllowedTaker ? (
-              <CopyableAddress
-                full={allowedTakerBech32 || keyToHex(offer.allowedTaker)}
-                className="text-yellow-400"
-              />
+        {/* Details */}
+        <DetailsGrid>
+          <DCell label="Seller">
+            {(() => {
+              try {
+                const bech32 = hex32ToP2TRAddress(keyToHex(offer.btcRecipientKey));
+                return (
+                  <>
+                    <CopyableAddress full={bech32} orange />
+                    <a href={getOpscanAccountUrl(bech32)} target="_blank" rel="noopener noreferrer"
+                      className="text-[10px] font-semibold text-brand hover:underline mt-1 block">OPScan</a>
+                  </>
+                );
+              } catch {
+                return <CopyableAddress full={offer.maker} orange />;
+              }
+            })()}
+          </DCell>
+          <DCell label={offer.isNFT ? 'Collection contract' : 'Token contract'}>
+            <CopyableAddress full={offer.token} orange />
+            <a href={offer.isNFT ? getOpscanContractUrl(offer.token) : getOpscanTokenUrl(offer.token)}
+              target="_blank" rel="noopener noreferrer"
+              className="text-[10px] font-semibold text-brand hover:underline mt-1 block">OPScan</a>
+          </DCell>
+          <DCell label="Private buyer">
+            {hasAllowedTaker ? (
+              <CopyableAddress full={allowedTakerBech32 || keyToHex(offer.allowedTaker)} className="text-yellow-400" />
             ) : (
               <span className="text-emerald-400">Public — anyone can fill</span>
-            )
-          }
-        />
+            )}
+          </DCell>
+          <DCell label="Standard">{offer.isNFT ? 'OP-721 NFT' : 'OP-20 Token'}</DCell>
+        </DetailsGrid>
 
-        <Field label="Standard" value={offer.isNFT ? 'OP-721 NFT' : 'OP-20 Token'} />
+        {/* Actions / non-open state */}
+        {(showActions || (!isOpen && fillFlow.state.phase === 'idle' && cancelFlow.state.phase === 'idle')) && (
+          <>
+            <div className="border-t border-surface-border" />
+
+            {showActions && (
+              <div className="space-y-4">
+                {isOpen && cancelFlow.state.phase === 'idle' && hasAllowedTaker && address && !isAllowedTaker && (
+                  <div className="bg-yellow-950/30 border border-yellow-700/30 rounded-xl p-4 text-xs text-yellow-400">
+                    <span className="font-semibold">Private listing — restricted to:</span>{' '}
+                    <span className="font-mono break-all">{allowedTakerBech32 || keyToHex(offer.allowedTaker)}</span>
+                  </div>
+                )}
+
+                {!isMaker && cancelFlow.state.phase === 'idle' && (
+                  <FillProgress
+                    state={fillFlow.state}
+                    onFill={handleFill}
+                    onReset={fillFlow.reset}
+                    onCheckStatus={() => void fillFlow.checkStatus()}
+                    disabled={Boolean(address && hasAllowedTaker && !isAllowedTaker)}
+                    fillLabel={address ? buyLabel : 'Connect Wallet'}
+                    btcBalanceSats={address ? btcBalanceSats : undefined}
+                    requiredSats={isOpen ? totalRequired : undefined}
+                  />
+                )}
+
+                {isMaker && (
+                  <div className="space-y-3">
+                    {cancelFlow.state.phase === 'idle' && isOpen && (
+                      <button
+                        type="button"
+                        onClick={() => void handleCancel()}
+                        className="btn-danger"
+                      >
+                        Cancel Listing
+                      </button>
+                    )}
+                    {cancelFlow.state.phase !== 'idle' && (
+                      <CancelProgress
+                        state={cancelFlow.state}
+                        onCheckStatus={() => void cancelFlow.checkStatus()}
+                        onReset={cancelFlow.reset}
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!isOpen && fillFlow.state.phase === 'idle' && cancelFlow.state.phase === 'idle' && (
+              <p className="text-sm text-slate-500 text-center">This listing is no longer active.</p>
+            )}
+          </>
+        )}
+
       </div>
-
-      {/* ── Actions ──────────────────────────────────────────────────────── */}
-      {showActions && (
-        <div className="card space-y-4">
-          <h2 className="text-base font-bold text-white">Trade</h2>
-
-          {isOpen && cancelFlow.state.phase === 'idle' && hasAllowedTaker && address && !isAllowedTaker && (
-            <div className="bg-yellow-950/30 border border-yellow-700/30 rounded-xl p-4 text-xs text-yellow-400">
-              <span className="font-semibold">Private listing — restricted to:</span>{' '}
-              <span className="font-mono break-all">{allowedTakerBech32 || keyToHex(offer.allowedTaker)}</span>
-            </div>
-          )}
-
-          {!isMaker && cancelFlow.state.phase === 'idle' && (
-            <FillProgress
-              state={fillFlow.state}
-              onFill={handleFill}
-              onReset={fillFlow.reset}
-              onCheckStatus={() => void fillFlow.checkStatus()}
-              disabled={Boolean(address && hasAllowedTaker && !isAllowedTaker)}
-              fillLabel={address ? buyLabel : 'Connect Wallet'}
-              btcBalanceSats={address ? btcBalanceSats : undefined}
-              requiredSats={isOpen ? totalRequired : undefined}
-            />
-          )}
-
-          {isMaker && (
-            <div className="border-t border-surface-border pt-4 space-y-3">
-
-              {/* Cancel button — only shown when idle and offer is still open */}
-              {cancelFlow.state.phase === 'idle' && isOpen && (
-                <button
-                  type="button"
-                  onClick={() => void handleCancel()}
-                  className="btn-danger"
-                >
-                  Cancel Listing
-                </button>
-              )}
-
-              {/* Cancel progress — shown in all non-idle phases */}
-              {cancelFlow.state.phase !== 'idle' && (
-                <CancelProgress
-                  state={cancelFlow.state}
-                  onCheckStatus={() => void cancelFlow.checkStatus()}
-                  onReset={cancelFlow.reset}
-                />
-              )}
-
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Non-open state */}
-      {!isOpen && fillFlow.state.phase === 'idle' && cancelFlow.state.phase === 'idle' && (
-        <div className="card text-center text-slate-500 py-10">
-          <p className="text-lg font-bold text-slate-300">
-            {OFFER_STATUS[offer.status]}
-          </p>
-          <p className="text-sm mt-1.5">This listing is no longer active.</p>
-          <Link href="/assets" className="text-brand hover:underline text-sm mt-4 inline-block">
-            ← Browse listings
-          </Link>
-        </div>
-      )}
-
-
-      {/* Contract reference */}
-      {CONTRACT_ADDRESS && (
-        <p className="text-[11px] text-slate-700 font-mono text-center">
-          Contract: {CONTRACT_ADDRESS.slice(0, 14)}…{CONTRACT_ADDRESS.slice(-6)}
-        </p>
-      )}
 
     </div>
   );

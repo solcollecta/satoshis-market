@@ -51,18 +51,25 @@ export default function HomePage() {
           Satoshi&apos;s{' '}
           <span className="text-brand">Market</span>
         </h1>
-        <p className="text-xl sm:text-2xl text-slate-400 font-medium max-w-xl mx-auto leading-relaxed">
+        <p className="text-xl sm:text-2xl text-slate-400 font-medium max-w-xl mx-auto leading-relaxed inline-flex items-center justify-center gap-2 flex-wrap">
           Trustless peer-to-peer trading on Bitcoin.
+          <span className="inline-flex items-center gap-1.5">
+            <span className="text-sm text-slate-600 font-medium">Powered by</span>
+            <Image src="/opnet-logo.svg" alt="OPNet" width={56} height={21} className="opacity-50" />
+          </span>
         </p>
       </div>
 
       {/* CTAs */}
       <div className="flex flex-wrap items-center justify-center gap-4">
+        <Link href="/create" className="btn-secondary px-10 py-3.5 text-lg">
+          List Assets
+        </Link>
         <Link href="/assets" className="btn-secondary px-10 py-3.5 text-lg">
           Trade Assets
         </Link>
-        <Link href="/create" className="btn-secondary px-10 py-3.5 text-lg">
-          Create Listing
+        <Link href="/request/create" className="btn-secondary px-10 py-3.5 text-lg">
+          Request Assets
         </Link>
       </div>
 

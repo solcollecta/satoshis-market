@@ -4,6 +4,13 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { fetchNftCollectionInfo, fetchTokenInfo, formatBtcFromSats } from '@/lib/opnet';
 
+/** Deterministic hue (0-359) from a contract address for placeholder colours */
+function addrHue(addr: string): number {
+  let h = 0;
+  for (let i = 0; i < Math.min(addr.length, 16); i++) h = (h * 31 + addr.charCodeAt(i)) & 0xffff;
+  return h % 360;
+}
+
 export interface CollectionSummary {
   address: string;
   isNFT: boolean;
@@ -59,19 +66,29 @@ export function CollectionCard({ collection }: Props) {
             onError={() => { if (bgSrc === banner) setBannerError(true); else setImgError(true); }}
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-surface to-surface-elevated">
-            <span className="text-5xl opacity-[0.07]">{collection.isNFT ? '🖼' : '🪙'}</span>
-          </div>
+          <div
+            className="w-full h-full"
+            style={{ background: `linear-gradient(135deg, hsl(${addrHue(collection.address)},35%,8%) 0%, hsl(${addrHue(collection.address)},45%,16%) 100%)` }}
+          />
         )}
 
-        {/* Floating icon when banner is showing */}
-        {banner && !bannerError && icon && !imgError && (
-          <img
-            src={icon}
-            alt=""
-            className="absolute bottom-2.5 left-3.5 w-9 h-9 rounded-lg object-cover border-2 border-surface-card shadow-lg"
-            onError={() => setImgError(true)}
-          />
+        {/* Floating icon — real image or letter placeholder */}
+        {(banner && !bannerError) && (
+          icon && !imgError ? (
+            <img
+              src={icon}
+              alt=""
+              className="absolute bottom-2.5 left-3.5 w-9 h-9 rounded-lg object-cover border-2 border-surface-card shadow-lg"
+              onError={() => setImgError(true)}
+            />
+          ) : (
+            <div
+              className="absolute bottom-2.5 left-3.5 w-9 h-9 rounded-lg border-2 border-surface-card shadow-lg flex items-center justify-center text-xs font-bold"
+              style={{ background: `hsl(${addrHue(collection.address)},40%,20%)`, color: `hsl(${addrHue(collection.address)},65%,65%)` }}
+            >
+              {(name ?? collection.address).slice(0, 1).toUpperCase()}
+            </div>
+          )
         )}
 
         {/* Type badge */}

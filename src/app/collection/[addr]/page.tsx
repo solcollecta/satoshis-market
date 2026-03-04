@@ -160,6 +160,12 @@ export default function CollectionPage() {
     return list;
   }, [offers, sort, search, statusFilters]);
 
+  const hue = (() => {
+    let h = 0;
+    for (let i = 0; i < Math.min(addr.length, 16); i++) h = (h * 31 + addr.charCodeAt(i)) & 0xffff;
+    return h % 360;
+  })();
+
   const bannerSrc  = nftInfo?.banner && !bannerErr ? nftInfo.banner : null;
   const iconSrc    = nftInfo?.icon && !iconErr ? nftInfo.icon : null;
   const displayName =
@@ -194,9 +200,10 @@ export default function CollectionPage() {
               onError={() => setBannerErr(true)}
             />
           ) : (
-            <div className="w-full h-full bg-gradient-to-br from-surface via-surface-card to-surface-elevated flex items-center justify-center">
-              <span className="text-7xl opacity-[0.06]">{isNFT ? '🖼' : '🪙'}</span>
-            </div>
+            <div
+              className="w-full h-full"
+              style={{ background: `linear-gradient(135deg, hsl(${hue},35%,8%) 0%, hsl(${hue},50%,16%) 100%)` }}
+            />
           )}
           {/* Stronger gradient so text below is always readable */}
           <div className="absolute inset-0 bg-gradient-to-t from-surface-card via-surface-card/40 to-transparent" />
@@ -219,8 +226,11 @@ export default function CollectionPage() {
                 onError={() => setIconErr(true)}
               />
             ) : (
-              <div className="w-16 h-16 rounded-xl bg-surface-elevated border-2 border-surface-card flex items-center justify-center text-2xl shrink-0 relative z-10 shadow-xl">
-                {isNFT ? '🖼' : '🪙'}
+              <div
+                className="w-16 h-16 rounded-xl border-2 border-surface-card shadow-xl shrink-0 relative z-10 flex items-center justify-center text-2xl font-bold"
+                style={{ background: `hsl(${hue},40%,16%)`, color: `hsl(${hue},65%,62%)` }}
+              >
+                {displayName.slice(0, 1).toUpperCase()}
               </div>
             )}
             <div className="min-w-0 pb-1 relative z-10">

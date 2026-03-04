@@ -180,9 +180,11 @@ export function OfferCard({ offer, createdAt }: Props) {
                 Private
               </span>
             )}
-            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${statusClass}`}>
-              {OFFER_STATUS[offer.status] ?? 'Unknown'}
-            </span>
+            {offer.status !== 1 && (
+              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${statusClass}`}>
+                {OFFER_STATUS[offer.status] ?? 'Unknown'}
+              </span>
+            )}
           </div>
         </div>
 

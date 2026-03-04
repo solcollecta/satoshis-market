@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useWallet } from '@/context/WalletContext';
 import {
   CONTRACT_ADDRESS,
@@ -34,9 +34,11 @@ const DUST_THRESHOLD = 546n;
 
 export default function CreateOfferPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { address, connect, provider } = useWallet();
   const flow = useTxFlow();
   const resumedRef = useRef(false);
+  const requestIdRef = useRef<string | null>(null);
 
   // ── Form state ────────────────────────────────────────────────────────────
   const [mode, setMode] = useState<Mode>('op20');
@@ -45,6 +47,7 @@ export default function CreateOfferPage() {
   const [tokenId, setTokenId] = useState('');
   const [btcValue, setBtcValue] = useState('');
   const [allowedTaker, setAllowedTaker] = useState('');
+  const [privateBuyerLocked, setPrivateBuyerLocked] = useState(false);
 
   /** Derived from connected wallet — no user input, no RPC needed */
   const makerRecipientKey = address ? (p2trAddressToKeyHex(address) ?? '') : '';
@@ -151,6 +154,63 @@ export default function CreateOfferPage() {
     return () => { cancelled = true; clearTimeout(t); };
   }, [tokenAddress, tokenAmountRaw, address, mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Read query params on mount (once, takes priority over draft) ─────────
+  useEffect(() => {
+    const mode_p          = searchParams.get('mode');
+    const contract_p      = searchParams.get('contractAddress');
+    const btcSats_p       = searchParams.get('btcSats');
+    const privateBuyer_p  = searchParams.get('privateBuyer');
+    const requestId_p     = searchParams.get('requestId');
+
+    // Only pre-fill if at least one meaningful param is present
+    if (!mode_p && !contract_p && !btcSats_p && !privateBuyer_p) return;
+
+    // Prevent draft from overwriting these
+    resumedRef.current = true;
+
+    if (mode_p === 'op20' || mode_p === 'op721') setMode(mode_p);
+    if (contract_p)     setTokenAddress(contract_p);
+
+    // OP-20
+    const rawAmt  = searchParams.get('tokenAmountRaw');
+    const rawDec  = searchParams.get('tokenDecimals');
+    const sym     = searchParams.get('tokenSymbol');
+    const name    = searchParams.get('tokenName');
+    if (rawAmt && rawDec) {
+      const dec = parseInt(rawDec, 10);
+      if (!isNaN(dec)) {
+        setTokenDecimals(dec);
+        try {
+          setTokenAmountHuman(formatUnits(BigInt(rawAmt), dec));
+        } catch { /* ignore */ }
+      }
+    }
+    if (sym || name) setTokenMeta({ name: name ?? '', symbol: sym ?? '' });
+
+    // OP-721
+    const tokenId_p = searchParams.get('tokenId');
+    if (tokenId_p) setTokenId(tokenId_p);
+
+    // BTC price
+    if (btcSats_p) {
+      try {
+        const sats = BigInt(btcSats_p);
+        // Convert sats to BTC decimal string
+        const btc = formatUnits(sats, 8);
+        setBtcValue(btc);
+      } catch { /* ignore */ }
+    }
+
+    // Private buyer
+    if (privateBuyer_p) {
+      setAllowedTaker(privateBuyer_p);
+      setPrivateBuyerLocked(true);
+    }
+
+    // Request ID (no re-render needed)
+    if (requestId_p) requestIdRef.current = requestId_p;
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Resume draft on mount (once) ─────────────────────────────────────────
   useEffect(() => {
     if (resumedRef.current) return;
@@ -177,6 +237,20 @@ export default function CreateOfferPage() {
   useEffect(() => {
     if (flow.state.phase === 'create_confirmed') clearCreateDraft();
   }, [flow.state.phase]);
+
+  // ── Mark request fulfilled when listing is confirmed ──────────────────────
+  useEffect(() => {
+    if (flow.state.phase !== 'create_confirmed') return;
+    if (!flow.state.offerId || !requestIdRef.current || !address) return;
+    void fetch(`/api/requests/${requestIdRef.current}/fulfill`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        listingId:   flow.state.offerId.toString(),
+        fulfilledBy: address,
+      }),
+    });
+  }, [flow.state.phase, flow.state.offerId, address]);
 
   // ── Warn before unload when a tx has been broadcast ───────────────────────
   // A broadcast tx can still confirm even after the tab closes, but the user
@@ -428,12 +502,21 @@ export default function CreateOfferPage() {
 
       <div className="max-w-xl mx-auto space-y-6">
         <div>
-          <a
-            href="/assets"
-            className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-white transition-colors mb-3"
-          >
-            ← All Assets
-          </a>
+          <div className="flex items-center gap-4 mb-3">
+            <a
+              href="/assets"
+              className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-white transition-colors"
+            >
+              ← Trade Assets
+            </a>
+            <span className="text-slate-600">|</span>
+            <a
+              href="/request/create"
+              className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-white transition-colors"
+            >
+              Request Assets →
+            </a>
+          </div>
           <h1 className="text-2xl font-bold text-white">Create Listing</h1>
           <p className="text-sm text-slate-400 mt-1">
             Escrow OP-20 tokens or an OP-721 NFT in exchange for BTC.
@@ -626,19 +709,44 @@ export default function CreateOfferPage() {
           </div>
 
           {/* Private buyer */}
-          <div>
-            <label htmlFor="allowed-taker">
-              Private buyer (optional)
+          <div className={`rounded-xl border p-4 transition-colors duration-200 ${
+            allowedTaker || privateBuyerLocked
+              ? 'border-sky-600/40 bg-sky-900/10'
+              : 'border-surface-border bg-surface/40'
+          }`}>
+            <label htmlFor="allowed-taker" className="flex items-center gap-2 mb-2">
+              <span className="text-sky-400 text-sm">🔒</span>
+              <span className="text-sm font-semibold text-slate-200">
+                Private buyer
+              </span>
+              <span className="text-[10px] text-slate-500 font-normal">optional</span>
+              {privateBuyerLocked && (
+                <span className="ml-1 text-[10px] font-bold text-amber-400 border border-amber-700/40 bg-amber-900/20 px-2 py-0.5 rounded-full">
+                  from request
+                </span>
+              )}
             </label>
+            <p className="text-xs text-slate-500 mb-3">
+              Restrict this listing to a single wallet. Only that address can buy it.
+            </p>
             <input
               id="allowed-taker"
-              placeholder="opt1p… / tb1p… / 0x… — leave blank for public offer"
+              placeholder="opt1p… / tb1p… / 0x…"
               value={allowedTaker}
-              onChange={(e) => setAllowedTaker(e.target.value)}
+              onChange={(e) => !privateBuyerLocked && setAllowedTaker(e.target.value)}
+              disabled={privateBuyerLocked}
+              className={privateBuyerLocked ? 'opacity-60 cursor-not-allowed' : ''}
             />
-            <p className="text-xs text-slate-500 mt-1">
-              Only this address can fill the offer. Leave blank to allow anyone.
-            </p>
+            {privateBuyerLocked ? (
+              <p className="text-xs text-amber-400/70 mt-2">
+                Locked to the requester&apos;s address. Only they can fill this listing.
+              </p>
+            ) : allowedTaker ? (
+              <p className="text-xs text-sky-400/70 mt-2 flex items-center gap-1.5">
+                <span>🔔</span>
+                That wallet will see a notification when they connect.
+              </p>
+            ) : null}
           </div>
 
           {/* Validation error (pre-tx) */}
