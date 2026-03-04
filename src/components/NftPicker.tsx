@@ -32,6 +32,8 @@ export function NftPicker({ walletAddress, initialContract = '', onSelect, onClo
 
   // Guard: only auto-load once on mount
   const autoLoadedRef = useRef(false);
+  // Incremented on each loadNftsFor call — stale metadata fetches check this
+  const loadIdRef = useRef(0);
 
   // Load saved collections on mount
   useEffect(() => {
@@ -51,6 +53,7 @@ export function NftPicker({ walletAddress, initialContract = '', onSelect, onClo
     if (!addr) return;
     setActiveContract(addr);
     setContractInput(addr);
+    loadIdRef.current++;  // invalidate any in-flight metadata workers for previous load
     setNftFetched(false);
     setNftError(null);
     setNfts([]);
@@ -65,24 +68,28 @@ export function NftPicker({ walletAddress, initialContract = '', onSelect, onClo
       setNfts(result);
       setNftFetched(true);
 
-      // Fetch each NFT's image in parallel — update per-row as they resolve
-      result.forEach((nft) => {
-        fetchNftMetadata(addr, nft.tokenId)
-          .then((meta) => {
-            setNftMeta((prev) => {
-              const next = new Map(prev);
-              next.set(nft.tokenId.toString(), meta);
-              return next;
-            });
-          })
-          .catch(() => {
-            setNftMeta((prev) => {
-              const next = new Map(prev);
-              next.set(nft.tokenId.toString(), null);
-              return next;
-            });
-          });
-      });
+      // Fetch metadata with max 4 concurrent requests.
+      // loadId guard prevents stale results from a previous collection load
+      // from overwriting state after the user has switched collection.
+      const loadId = ++loadIdRef.current;
+      let taskIdx = 0;
+      const runWorker = async () => {
+        while (true) {
+          const idx = taskIdx++;
+          if (idx >= result.length) break;
+          const nft = result[idx];
+          const tid = nft.tokenId.toString();
+          try {
+            const meta = await fetchNftMetadata(addr, nft.tokenId);
+            if (loadIdRef.current !== loadId) return;
+            setNftMeta((prev) => { const m = new Map(prev); m.set(tid, meta); return m; });
+          } catch {
+            if (loadIdRef.current !== loadId) return;
+            setNftMeta((prev) => { const m = new Map(prev); m.set(tid, null); return m; });
+          }
+        }
+      };
+      void Promise.all(Array.from({ length: Math.min(4, result.length) }, runWorker));
 
       // Save to cache
       saveCachedCollection({

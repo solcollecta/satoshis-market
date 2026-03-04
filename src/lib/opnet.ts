@@ -499,7 +499,7 @@ const OP721_QUERY_ABI: BitcoinInterfaceAbi = [
 // ── OP-721 collection info + per-token metadata ───────────────────────────────
 
 /** Resolve ipfs:// URIs to an HTTP gateway URL; pass everything else through. */
-function resolveIpfsUri(uri: string): string {
+export function resolveIpfsUri(uri: string): string {
   return uri.startsWith('ipfs://') ? `https://ipfs.io/ipfs/${uri.slice(7)}` : uri;
 }
 
@@ -587,12 +587,16 @@ export async function fetchNftMetadata(
 
     let json: Record<string, unknown>;
     if (uri.startsWith('data:application/json')) {
+      // Inline JSON — no network fetch needed
       const [, payload] = uri.split(',');
       const decoded = uri.includes(';base64,') ? atob(payload) : decodeURIComponent(payload);
       json = JSON.parse(decoded) as Record<string, unknown>;
     } else {
-      const res = await fetch(resolveIpfsUri(uri), { signal: AbortSignal.timeout(8000) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // Route through server-side proxy to avoid CORS blocks on IPFS gateways.
+      // The proxy handles ipfs:// → https gateway resolution.
+      const proxyUrl = `/api/nft-metadata?url=${encodeURIComponent(uri)}`;
+      const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
+      if (!res.ok) throw new Error(`proxy ${res.status}`);
       json = await res.json() as Record<string, unknown>;
     }
 
