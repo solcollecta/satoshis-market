@@ -81,9 +81,14 @@ export default function TokensPage() {
             </p>
           )}
         </div>
-        <Link href="/create" target="_blank" rel="noopener noreferrer" className="btn-primary shrink-0 text-sm">
-          + Create Listing
-        </Link>
+        <div className="flex items-center gap-2 shrink-0">
+          <Link href="/create" className="btn-secondary shrink-0 text-sm">
+            + List Asset
+          </Link>
+          <Link href="/request/create" className="btn-secondary shrink-0 text-sm">
+            + Request Asset
+          </Link>
+        </div>
       </div>
 
       {/* Controls */}
