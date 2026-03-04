@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { fetchOwnedNfts, fetchNftCollectionInfo, type NftEntry } from '@/lib/opnet';
+import { fetchOwnedNfts, fetchNftCollectionInfo, fetchNftMetadata, type NftEntry, type NftMetadata } from '@/lib/opnet';
 import {
   loadCachedCollections,
   saveCachedCollection,
@@ -27,6 +27,8 @@ export function NftPicker({ walletAddress, initialContract = '', onSelect, onClo
   const [nftLoading, setNftLoading]         = useState(false);
   const [nftError, setNftError]             = useState<string | null>(null);
   const [nftFetched, setNftFetched]         = useState(false);
+  // tokenId → metadata (undefined = not yet fetched, null = fetch failed/no image)
+  const [nftMeta, setNftMeta] = useState<Map<string, NftMetadata | null>>(new Map());
 
   // Guard: only auto-load once on mount
   const autoLoadedRef = useRef(false);
@@ -52,6 +54,7 @@ export function NftPicker({ walletAddress, initialContract = '', onSelect, onClo
     setNftFetched(false);
     setNftError(null);
     setNfts([]);
+    setNftMeta(new Map());
     setNftLoading(true);
     try {
       const info = await fetchNftCollectionInfo(addr).catch(() => null);
@@ -61,6 +64,25 @@ export function NftPicker({ walletAddress, initialContract = '', onSelect, onClo
       const result = await fetchOwnedNfts(addr, walletAddress);
       setNfts(result);
       setNftFetched(true);
+
+      // Fetch each NFT's image in parallel — update per-row as they resolve
+      result.forEach((nft) => {
+        fetchNftMetadata(addr, nft.tokenId)
+          .then((meta) => {
+            setNftMeta((prev) => {
+              const next = new Map(prev);
+              next.set(nft.tokenId.toString(), meta);
+              return next;
+            });
+          })
+          .catch(() => {
+            setNftMeta((prev) => {
+              const next = new Map(prev);
+              next.set(nft.tokenId.toString(), null);
+              return next;
+            });
+          });
+      });
 
       // Save to cache
       saveCachedCollection({
@@ -224,19 +246,45 @@ export function NftPicker({ walletAddress, initialContract = '', onSelect, onClo
             )}
 
             {nfts.length > 0 && (
-              <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
-                {nfts.map((nft) => (
-                  <button
-                    key={nft.tokenId.toString()}
-                    onClick={() => onSelect(nft)}
-                    className="w-full text-left bg-surface rounded-lg p-3 border border-surface-border hover:border-brand transition-colors"
-                  >
-                    <p className="text-sm font-medium text-white">{nft.collectionName}</p>
-                    <p className="text-xs text-slate-400 font-mono">
-                      Token ID: {nft.tokenId.toString()}
-                    </p>
-                  </button>
-                ))}
+              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                {nfts.map((nft) => {
+                  const tid = nft.tokenId.toString();
+                  const meta = nftMeta.get(tid);          // undefined = loading, null = no image
+                  const imgSrc = meta?.image ?? null;
+                  const imgLoading = !nftMeta.has(tid);
+                  return (
+                    <button
+                      key={tid}
+                      onClick={() => onSelect(nft)}
+                      className="w-full text-left bg-surface rounded-lg p-3 border border-surface-border hover:border-brand transition-colors flex items-center gap-3"
+                    >
+                      {/* Thumbnail */}
+                      <div className="w-14 h-14 rounded-lg overflow-hidden shrink-0 bg-surface-border flex items-center justify-center">
+                        {imgLoading ? (
+                          <div className="w-full h-full skeleton" />
+                        ) : imgSrc ? (
+                          <img
+                            src={imgSrc}
+                            alt={`#${tid}`}
+                            className="w-full h-full object-cover"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                          />
+                        ) : (
+                          <span className="text-2xl text-slate-600">🖼</span>
+                        )}
+                      </div>
+                      {/* Info */}
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-white truncate">
+                          {meta?.name ?? nft.collectionName} #{tid}
+                        </p>
+                        <p className="text-xs text-slate-500 font-mono mt-0.5">
+                          Token ID: {tid}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
