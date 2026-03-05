@@ -22,6 +22,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { checkTxConfirmed, getOffer } from '@/lib/opnet';
 import { addPendingTx, removePendingTx } from '@/lib/pendingTxs';
 
+/** Fire-and-forget: save fill txid to DB so all viewers can see it. */
+function saveFillTxid(listingId: string, txid: string) {
+  fetch('/api/fill', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ listingId, txid }),
+  }).catch(err => console.warn('[saveFillTxid]', err));
+}
+
 export type FillPhase = 'idle' | 'simulating' | 'pending' | 'confirmed' | 'failed';
 
 export interface FillFlowState {
@@ -108,6 +117,9 @@ export function useFillFlow(offerId: bigint) {
     addPendingTx({ type: 'fill', txid, offerId: offerIdRef.current.toString() });
     setState({ phase: 'pending', txid, error: null, elapsed: 0 });
 
+    // Persist txid to DB so all viewers (seller, buyer, neutral) can see it
+    saveFillTxid(offerIdRef.current.toString(), txid);
+
     const entry: FillPollEntry = {
       pollId: null,
       tickId: null,
@@ -154,6 +166,7 @@ export function useFillFlow(offerId: bigint) {
         clearTxPoll(txid);
         if (activeTxidRef.current === txid) activeTxidRef.current = null;
         removePendingTx(txid);
+
         setState(s => {
           if (s.txid !== txid) return s;
           return { ...s, phase: 'confirmed' };
@@ -169,6 +182,7 @@ export function useFillFlow(offerId: bigint) {
           clearTxPoll(txid);
           if (activeTxidRef.current === txid) activeTxidRef.current = null;
           removePendingTx(txid);
+  
           setState(s => {
             if (s.txid !== txid) return s;
             return { ...s, phase: 'confirmed' };
@@ -205,6 +219,7 @@ export function useFillFlow(offerId: bigint) {
         clearTxPoll(txid);
         if (activeTxidRef.current === txid) activeTxidRef.current = null;
         removePendingTx(txid);
+
         setState(s => {
           if (s.txid !== txid) return s;
           return { ...s, phase: 'confirmed' };

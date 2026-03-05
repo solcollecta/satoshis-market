@@ -9,6 +9,7 @@ import {
   calcFeeSats,
   formatBtcFromSats,
   getOpscanAccountUrl,
+  getOpscanTxUrl,
   getOpscanTokenUrl,
   getOpscanContractUrl,
   resolveNftImageUrls,
@@ -146,6 +147,19 @@ export default function OfferDetailPage({
       .catch(() => { if (!cancelled) setIsMaker(false); });
     return () => { cancelled = true; };
   }, [offer?.maker, address]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Fill txid (from DB, visible to all viewers) ─────────────────────────
+  const [fillTxid, setFillTxid] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!offer || offer.status !== 2) return;
+    // Also pick up txid from current fill flow (buyer just completed)
+    if (fillFlow.state.txid) { setFillTxid(fillFlow.state.txid); return; }
+    fetch(`/api/fill?listingId=${id}`)
+      .then(r => r.json())
+      .then(data => { if (data?.txid) setFillTxid(data.txid); })
+      .catch(() => {});
+  }, [offer?.status, id, fillFlow.state.txid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const offerId = BigInt(id);
@@ -513,7 +527,60 @@ export default function OfferDetailPage({
             )}
 
             {!isOpen && fillFlow.state.phase === 'idle' && cancelFlow.state.phase === 'idle' && (
-              <p className="text-sm text-slate-500 text-center">This listing is no longer active.</p>
+              (() => {
+                // Filled listing: show context-aware message
+                if (offer.status === 2) {
+                  const txid = fillTxid;
+                  const message = isMaker
+                    ? 'Sale complete — state verified on-chain.'
+                    : address
+                      ? 'Purchase complete — state verified on-chain.'
+                      : 'Trade complete — state verified on-chain.';
+
+                  if (txid) {
+                    return (
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2 text-green-400">
+                          <span className="text-lg leading-none">✓</span>
+                          <p className="text-sm font-semibold">{message}</p>
+                        </div>
+                        <div className="bg-surface rounded-lg px-3 py-2 border border-surface-border">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-slate-500 font-mono flex-1 min-w-0 truncate">
+                              {txid.slice(0, 12)}…{txid.slice(-8)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => { navigator.clipboard.writeText(txid).catch(() => {}); }}
+                              className="text-xs text-slate-400 hover:text-white transition-colors shrink-0"
+                            >
+                              Copy
+                            </button>
+                            <a
+                              href={getOpscanTxUrl(txid)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-brand hover:underline shrink-0"
+                            >
+                              OPScan →
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="flex items-center gap-2 text-green-400">
+                      <span className="text-lg leading-none">✓</span>
+                      <p className="text-sm font-semibold">{message}</p>
+                    </div>
+                  );
+                }
+
+                // Cancelled or other non-active state
+                return <p className="text-sm text-slate-500 text-center">This listing is no longer active.</p>;
+              })()
             )}
           </>
         )}
