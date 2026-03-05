@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { WalletBar } from './WalletBar';
 import { PendingTxsIndicator } from './PendingTxsIndicator';
 import { PrivateListingsIndicator } from './PrivateListingsIndicator';
+import { SalesIndicator } from './SalesIndicator';
 import { BtcPrice } from './BtcPrice';
 
 export function Navbar() {
@@ -75,6 +76,7 @@ export function Navbar() {
           <BtcPrice />
           <PendingTxsIndicator />
           <PrivateListingsIndicator />
+          <SalesIndicator />
           <WalletBar />
         </div>
 

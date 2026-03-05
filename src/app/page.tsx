@@ -55,7 +55,7 @@ export default function HomePage() {
           Trustless peer-to-peer trading on Bitcoin.
           <span className="inline-flex items-center gap-1.5">
             <span className="text-sm text-slate-600 font-medium">Powered by</span>
-            <Image src="/opnet-logo.svg" alt="OPNet" width={56} height={21} className="opacity-50" />
+            <Image src="/opnet-logo.svg" alt="OPNet" width={56} height={21} className="animate-opnet-glow" />
           </span>
         </p>
       </div>

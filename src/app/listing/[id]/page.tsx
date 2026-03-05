@@ -100,7 +100,12 @@ export default function OfferDetailPage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fillFlow   = useFillFlow(BigInt(id));
+  // Derive seller P2TR address for fill notification
+  const sellerBech32 = (() => {
+    if (!offer) return undefined;
+    try { return hex32ToP2TRAddress(keyToHex(offer.btcRecipientKey)); } catch { return undefined; }
+  })();
+  const fillFlow   = useFillFlow(BigInt(id), sellerBech32);
   const cancelFlow = useCancelFlow(BigInt(id));
   const resumedRef       = useRef(false);
   const cancelResumedRef = useRef(false);

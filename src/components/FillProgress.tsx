@@ -168,6 +168,9 @@ export function FillProgress({
             {elapsed > 0 ? `${elapsed}s elapsed · ` : ''}
             Checking every 5 seconds. This can take a few minutes — please be patient.
           </p>
+          <p className="text-xs text-slate-500 italic">
+            You can close this window. Your pending transaction is tracked in the navbar.
+          </p>
           {elapsed >= 600 && (
             <button type="button" onClick={onCheckStatus} className="btn-secondary text-sm w-full">
               Recheck Status

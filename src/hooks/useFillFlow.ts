@@ -22,12 +22,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { checkTxConfirmed, getOffer } from '@/lib/opnet';
 import { addPendingTx, removePendingTx } from '@/lib/pendingTxs';
 
-/** Fire-and-forget: save fill txid to DB so all viewers can see it. */
-function saveFillTxid(listingId: string, txid: string) {
+/** Fire-and-forget: save fill txid + seller to DB so all viewers can see it. */
+function saveFillTxid(listingId: string, txid: string, seller: string) {
   fetch('/api/fill', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ listingId, txid }),
+    body: JSON.stringify({ listingId, txid, seller }),
   }).catch(err => console.warn('[saveFillTxid]', err));
 }
 
@@ -51,7 +51,7 @@ interface FillPollEntry {
   startTs: number;
 }
 
-export function useFillFlow(offerId: bigint) {
+export function useFillFlow(offerId: bigint, sellerAddress?: string) {
   const [state, setState] = useState<FillFlowState>({
     phase: 'idle',
     txid: null,
@@ -63,9 +63,11 @@ export function useFillFlow(offerId: bigint) {
   const txPollsRef  = useRef<Map<string, FillPollEntry>>(new Map());
   const activeTxidRef = useRef<string | null>(null);
 
-  // Keep offerId current inside poll closures without causing re-registration.
+  // Keep offerId + sellerAddress current inside poll closures without causing re-registration.
   const offerIdRef = useRef<bigint>(offerId);
   useEffect(() => { offerIdRef.current = offerId; }, [offerId]);
+  const sellerRef = useRef(sellerAddress ?? '');
+  useEffect(() => { sellerRef.current = sellerAddress ?? ''; }, [sellerAddress]);
 
   // ── Interval helpers ────────────────────────────────────────────────────
 
@@ -117,8 +119,8 @@ export function useFillFlow(offerId: bigint) {
     addPendingTx({ type: 'fill', txid, offerId: offerIdRef.current.toString() });
     setState({ phase: 'pending', txid, error: null, elapsed: 0 });
 
-    // Persist txid to DB so all viewers (seller, buyer, neutral) can see it
-    saveFillTxid(offerIdRef.current.toString(), txid);
+    // Persist txid + seller to DB so all viewers can see it + seller gets notified
+    saveFillTxid(offerIdRef.current.toString(), txid, sellerRef.current);
 
     const entry: FillPollEntry = {
       pollId: null,

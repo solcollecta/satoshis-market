@@ -19,12 +19,13 @@ export async function POST(req: NextRequest) {
     const body = await req.json() as Record<string, unknown>;
     const listingId = typeof body.listingId === 'string' ? body.listingId.trim()
                     : typeof body.listingId === 'number' ? String(body.listingId) : '';
-    const txid = typeof body.txid === 'string' ? body.txid.trim() : '';
+    const txid   = typeof body.txid   === 'string' ? body.txid.trim()   : '';
+    const seller = typeof body.seller === 'string' ? body.seller.trim() : '';
 
     if (!listingId) return NextResponse.json({ error: 'listingId required' }, { status: 400 });
-    if (!txid) return NextResponse.json({ error: 'txid required' }, { status: 400 });
+    if (!txid)      return NextResponse.json({ error: 'txid required' },      { status: 400 });
 
-    await saveFillTxid(listingId, txid);
+    await saveFillTxid(listingId, txid, seller);
     return NextResponse.json({ ok: true });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
