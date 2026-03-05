@@ -1,34 +1,27 @@
 /**
- * lib/db.ts — SQLite singleton (server-side only).
- * Auto-creates data/ dir + requests table on first import.
+ * lib/db.ts — Neon Postgres pool (server-side only).
+ * Auto-creates requests table on first query.
+ * Reads DATABASE_URL from env (set in Vercel project settings).
  */
-import Database from 'better-sqlite3';
-import path from 'path';
-import fs from 'fs';
+import { neon } from '@neondatabase/serverless';
 
-const DB_DIR  = process.env.DB_FILE_PATH
-  ? path.dirname(process.env.DB_FILE_PATH)
-  : path.join(process.cwd(), 'data');
+function getSQL() {
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error('DATABASE_URL env var is not set');
+  return neon(url);
+}
 
-const DB_PATH = process.env.DB_FILE_PATH ?? path.join(DB_DIR, 'requests.db');
+let _initialized = false;
 
-let _db: Database.Database | null = null;
+export async function ensureTable() {
+  if (_initialized) return;
 
-export function getDb(): Database.Database {
-  if (_db) return _db;
-
-  if (!fs.existsSync(DB_DIR)) {
-    fs.mkdirSync(DB_DIR, { recursive: true });
-  }
-
-  _db = new Database(DB_PATH);
-  _db.pragma('journal_mode = WAL');
-
-  _db.exec(`
+  const sql = getSQL();
+  await sql`
     CREATE TABLE IF NOT EXISTS requests (
       id                 TEXT PRIMARY KEY,
-      created_at         INTEGER NOT NULL,
-      updated_at         INTEGER NOT NULL,
+      created_at         BIGINT NOT NULL,
+      updated_at         BIGINT NOT NULL,
       status             TEXT    NOT NULL DEFAULT 'open',
       requester_address  TEXT    NOT NULL,
       asset_type         TEXT    NOT NULL,
@@ -40,11 +33,13 @@ export function getDb(): Database.Database {
       token_id           TEXT,
       btc_sats           TEXT    NOT NULL,
       restricted_seller  TEXT,
-      fulfilled_at       INTEGER,
+      fulfilled_at       BIGINT,
       fulfilled_by       TEXT,
       listing_id         TEXT
     )
-  `);
+  `;
 
-  return _db;
+  _initialized = true;
 }
+
+export { getSQL };

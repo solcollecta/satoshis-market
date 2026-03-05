@@ -1,9 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  experimental: {
-    serverComponentsExternalPackages: ['better-sqlite3'],
-  },
   // OPNet / @btc-vision packages ship CJS + ESM; polyfill Node builtins
   webpack: (config, { isServer }) => {
     if (!isServer) {

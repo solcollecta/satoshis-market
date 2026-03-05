@@ -11,7 +11,7 @@ export async function POST(
     if (!requesterAddress) {
       return NextResponse.json({ error: 'requesterAddress is required' }, { status: 400 });
     }
-    const ok = cancelRequest(params.id, requesterAddress);
+    const ok = await cancelRequest(params.id, requesterAddress);
     if (!ok) {
       return NextResponse.json({ error: 'Not found or not authorised' }, { status: 404 });
     }

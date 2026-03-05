@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
     const id = searchParams.get('id');
 
     if (id) {
-      const request = getRequest(id);
+      const request = await getRequest(id);
       if (!request) return NextResponse.json({ error: 'Not found' }, { status: 404 });
       return NextResponse.json(request);
     }
@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
       assetType: searchParams.get('assetType') ?? undefined,
       q:         searchParams.get('q')         ?? undefined,
     };
-    return NextResponse.json(listRequests(filter));
+    return NextResponse.json(await listRequests(filter));
   } catch (err) {
     console.error('[api/requests GET]', err);
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
@@ -63,23 +63,23 @@ export async function POST(req: NextRequest) {
       } catch {
         return NextResponse.json({ error: 'tokenAmountRaw must be a positive integer string' }, { status: 400 });
       }
-      if (rawDec < 0 || rawDec > 18) return NextResponse.json({ error: 'tokenDecimals must be 0–18' }, { status: 400 });
+      if (rawDec < 0 || rawDec > 18) return NextResponse.json({ error: 'tokenDecimals must be 0-18' }, { status: 400 });
       tokenAmountRaw = rawAmt;
       tokenDecimals  = rawDec;
     }
 
-    // OP-721 specifics — tokenId is optional ("any from collection" = no tokenId)
+    // OP-721 specifics
     let tokenId: string | undefined;
     if (assetType === 'op721') {
       const raw = typeof body.tokenId === 'string' ? body.tokenId.trim() : '';
-      tokenId = raw || undefined; // undefined = any NFT from collection
+      tokenId = raw || undefined;
     }
 
     const tokenSymbol      = typeof body.tokenSymbol      === 'string' ? body.tokenSymbol.trim()      || undefined : undefined;
     const tokenName        = typeof body.tokenName        === 'string' ? body.tokenName.trim()        || undefined : undefined;
     const restrictedSeller = typeof body.restrictedSeller === 'string' ? body.restrictedSeller.trim() || undefined : undefined;
 
-    const created = createRequest({
+    const created = await createRequest({
       requesterAddress,
       assetType: assetType as 'op20' | 'op721',
       contractAddress,

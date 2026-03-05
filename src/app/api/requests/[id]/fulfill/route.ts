@@ -12,7 +12,7 @@ export async function POST(
     if (!listingId)   return NextResponse.json({ error: 'listingId is required' },   { status: 400 });
     if (!fulfilledBy) return NextResponse.json({ error: 'fulfilledBy is required' }, { status: 400 });
 
-    const ok = fulfillRequest(params.id, listingId, fulfilledBy);
+    const ok = await fulfillRequest(params.id, listingId, fulfilledBy);
     if (!ok) {
       return NextResponse.json({ error: 'Not found or already closed' }, { status: 404 });
     }

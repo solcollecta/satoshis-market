@@ -2,7 +2,7 @@
  * lib/requestsDb.ts — CRUD for buy requests (server-side only).
  */
 import { v4 as uuidv4 } from 'uuid';
-import { getDb } from './db';
+import { getSQL, ensureTable } from './db';
 
 export type RequestStatus = 'open' | 'fulfilled' | 'cancelled';
 export type AssetType     = 'op20' | 'op721';
@@ -15,14 +15,11 @@ export interface BuyRequest {
   requesterAddress: string;
   assetType:        AssetType;
   contractAddress:  string;
-  /** OP-20 only — raw bigint as string */
   tokenAmountRaw:   string | null;
   tokenDecimals:    number | null;
   tokenSymbol:      string | null;
   tokenName:        string | null;
-  /** OP-721 only */
   tokenId:          string | null;
-  /** satoshis as string */
   btcSats:          string;
   restrictedSeller: string | null;
   fulfilledAt:      number | null;
@@ -34,8 +31,8 @@ export interface BuyRequest {
 
 interface RawRow {
   id:                string;
-  created_at:        number;
-  updated_at:        number;
+  created_at:        string;
+  updated_at:        string;
   status:            string;
   requester_address: string;
   asset_type:        string;
@@ -47,7 +44,7 @@ interface RawRow {
   token_id:          string | null;
   btc_sats:          string;
   restricted_seller: string | null;
-  fulfilled_at:      number | null;
+  fulfilled_at:      string | null;
   fulfilled_by:      string | null;
   listing_id:        string | null;
 }
@@ -55,8 +52,8 @@ interface RawRow {
 function rowToRequest(row: RawRow): BuyRequest {
   return {
     id:               row.id,
-    createdAt:        row.created_at,
-    updatedAt:        row.updated_at,
+    createdAt:        Number(row.created_at),
+    updatedAt:        Number(row.updated_at),
     status:           row.status as RequestStatus,
     requesterAddress: row.requester_address,
     assetType:        row.asset_type as AssetType,
@@ -68,7 +65,7 @@ function rowToRequest(row: RawRow): BuyRequest {
     tokenId:          row.token_id,
     btcSats:          row.btc_sats,
     restrictedSeller: row.restricted_seller,
-    fulfilledAt:      row.fulfilled_at,
+    fulfilledAt:      row.fulfilled_at ? Number(row.fulfilled_at) : null,
     fulfilledBy:      row.fulfilled_by,
     listingId:        row.listing_id,
   };
@@ -82,34 +79,41 @@ export interface ListRequestsFilter {
   q?:         string;
 }
 
-export function listRequests(filter: ListRequestsFilter = {}): BuyRequest[] {
-  const db = getDb();
+export async function listRequests(filter: ListRequestsFilter = {}): Promise<BuyRequest[]> {
+  await ensureTable();
+  const sql = getSQL();
+
+  // Build dynamic WHERE
   const conditions: string[] = [];
-  const params: unknown[]    = [];
+  const values: unknown[] = [];
+  let idx = 1;
 
   if (filter.status) {
-    conditions.push('status = ?');
-    params.push(filter.status);
+    conditions.push(`status = $${idx++}`);
+    values.push(filter.status);
   }
   if (filter.assetType) {
-    conditions.push('asset_type = ?');
-    params.push(filter.assetType);
+    conditions.push(`asset_type = $${idx++}`);
+    values.push(filter.assetType);
   }
   if (filter.q) {
-    conditions.push('(contract_address LIKE ? OR token_symbol LIKE ? OR token_name LIKE ?)');
     const like = `%${filter.q}%`;
-    params.push(like, like, like);
+    conditions.push(`(contract_address LIKE $${idx++} OR token_symbol LIKE $${idx++} OR token_name LIKE $${idx++})`);
+    values.push(like, like, like);
   }
 
-  const where  = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-  const sql    = `SELECT * FROM requests ${where} ORDER BY created_at DESC`;
-  const rows   = db.prepare(sql).all(...params) as RawRow[];
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const query = `SELECT * FROM requests ${where} ORDER BY created_at DESC`;
+
+  const rows = await sql.query(query, values) as RawRow[];
   return rows.map(rowToRequest);
 }
 
-export function getRequest(id: string): BuyRequest | null {
-  const db  = getDb();
-  const row = db.prepare('SELECT * FROM requests WHERE id = ?').get(id) as RawRow | undefined;
+export async function getRequest(id: string): Promise<BuyRequest | null> {
+  await ensureTable();
+  const sql = getSQL();
+  const rows = await sql`SELECT * FROM requests WHERE id = ${id}`;
+  const row = rows[0] as RawRow | undefined;
   return row ? rowToRequest(row) : null;
 }
 
@@ -126,51 +130,54 @@ export interface CreateRequestData {
   restrictedSeller?: string;
 }
 
-export function createRequest(data: CreateRequestData): BuyRequest {
-  const db  = getDb();
+export async function createRequest(data: CreateRequestData): Promise<BuyRequest> {
+  await ensureTable();
+  const sql = getSQL();
   const id  = uuidv4();
   const now = Date.now();
 
-  db.prepare(`
+  await sql`
     INSERT INTO requests (
       id, created_at, updated_at, status,
       requester_address, asset_type, contract_address,
       token_amount_raw, token_decimals, token_symbol, token_name,
       token_id, btc_sats, restricted_seller
-    ) VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    id, now, now,
-    data.requesterAddress, data.assetType, data.contractAddress,
-    data.tokenAmountRaw  ?? null,
-    data.tokenDecimals   ?? null,
-    data.tokenSymbol     ?? null,
-    data.tokenName       ?? null,
-    data.tokenId         ?? null,
-    data.btcSats,
-    data.restrictedSeller ?? null,
-  );
+    ) VALUES (
+      ${id}, ${now}, ${now}, ${'open'},
+      ${data.requesterAddress}, ${data.assetType}, ${data.contractAddress},
+      ${data.tokenAmountRaw ?? null}, ${data.tokenDecimals ?? null},
+      ${data.tokenSymbol ?? null}, ${data.tokenName ?? null},
+      ${data.tokenId ?? null}, ${data.btcSats},
+      ${data.restrictedSeller ?? null}
+    )
+  `;
 
-  return getRequest(id)!;
+  return (await getRequest(id))!;
 }
 
-export function cancelRequest(id: string, requesterAddress: string): boolean {
-  const db  = getDb();
+export async function cancelRequest(id: string, requesterAddress: string): Promise<boolean> {
+  await ensureTable();
+  const sql = getSQL();
   const now = Date.now();
-  const result = db.prepare(`
+  const result = await sql`
     UPDATE requests
-    SET status = 'cancelled', updated_at = ?
-    WHERE id = ? AND requester_address = ? AND status = 'open'
-  `).run(now, id, requesterAddress);
-  return result.changes > 0;
+    SET status = 'cancelled', updated_at = ${now}
+    WHERE id = ${id} AND requester_address = ${requesterAddress} AND status = 'open'
+    RETURNING id
+  `;
+  return result.length > 0;
 }
 
-export function fulfillRequest(id: string, listingId: string, fulfilledBy: string): boolean {
-  const db  = getDb();
+export async function fulfillRequest(id: string, listingId: string, fulfilledBy: string): Promise<boolean> {
+  await ensureTable();
+  const sql = getSQL();
   const now = Date.now();
-  const result = db.prepare(`
+  const result = await sql`
     UPDATE requests
-    SET status = 'fulfilled', updated_at = ?, fulfilled_at = ?, fulfilled_by = ?, listing_id = ?
-    WHERE id = ? AND status = 'open'
-  `).run(now, now, fulfilledBy, listingId, id);
-  return result.changes > 0;
+    SET status = 'fulfilled', updated_at = ${now}, fulfilled_at = ${now},
+        fulfilled_by = ${fulfilledBy}, listing_id = ${listingId}
+    WHERE id = ${id} AND status = 'open'
+    RETURNING id
+  `;
+  return result.length > 0;
 }
