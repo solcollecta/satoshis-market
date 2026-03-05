@@ -1,124 +1,200 @@
-# AtomicSwap Escrow — Web UI
+# Satoshi's Market
 
-Next.js 14 (TypeScript, Tailwind CSS) frontend for the **AtomicSwapEscrow** OPNet contract.
-Supports trustless OP-20 token and OP-721 NFT ↔ BTC swaps.
+**Trustless peer‑to‑peer marketplace for OP‑721 NFTs and OP‑20 tokens on
+Bitcoin (OPNet).**
 
----
+Satoshi's Market enables direct trading of NFTs and tokens using an
+atomic escrow contract.\
+Users can create listings, post buy requests, and fulfill requests
+through private listings without intermediaries.
 
-## Quick start
+------------------------------------------------------------------------
 
-```bash
-# 1. Install dependencies
-npm install
+## Live Demo
 
-# 2. Configure environment
-cp .env.local.example .env.local
-# → edit .env.local (see section below)
+https://satoshis-market.vercel.app
 
-# 3. Dev server
-npm run dev
-# → http://localhost:3000
-```
+------------------------------------------------------------------------
 
----
+## What is Satoshi's Market?
 
-## Environment variables (`.env.local`)
+Satoshi's Market is a decentralized marketplace built for the OPNet
+ecosystem.
 
-| Variable | Description | Example |
-|---|---|---|
-| `NEXT_PUBLIC_CONTRACT_ADDRESS` | Deployed escrow contract address | `bcrt1p…` |
-| `NEXT_PUBLIC_NETWORK` | `regtest` / `testnet` / `mainnet` | `regtest` |
-| `NEXT_PUBLIC_RPC_URL` | OPNet JSON-RPC endpoint | `http://localhost:9001` |
-| `NEXT_PUBLIC_MAX_OFFER_ID` | Max offer ID to scan on home page | `50` |
+It allows users to:
 
----
+-   List **OP‑721 NFTs** for BTC
+-   List **OP‑20 tokens** for BTC
+-   Create **buy requests** for assets
+-   Fulfill requests by creating **private listings**
+-   Trade assets through a **trustless escrow contract**
 
-## Pages
+The goal is to enable **peer‑to‑peer trading on Bitcoin** without
+custodial platforms.
 
-### `/` — Offer list
-Scans offer IDs 1..N (configurable in the UI). Shows open offers first, then filled/cancelled.
+------------------------------------------------------------------------
 
-### `/create` — Create offer
-- **OP-20 mode**: escrow `tokenAmount` tokens in exchange for `btcSatoshis`.
-- **OP-721 mode**: escrow NFT `tokenId` in exchange for `btcSatoshis`.
+## Key Features
 
-> **Prerequisites before submitting:**
-> You must call `token.approve(escrowAddress, amount)` (OP-20) or
-> `nft.approve(escrowAddress, tokenId)` (OP-721) first so the contract can pull your assets.
+### Asset Listings
 
-### `/offer/[id]` — Offer detail
-Shows all offer fields.
+Users can list:
 
-**For takers (Fill Offer):**
-The page displays the exact P2TR outputs your Bitcoin transaction must include:
+-   OP‑721 NFTs
+-   OP‑20 tokens
 
-| Case | Required outputs |
-|---|---|
-| `feeBps == 0` | One P2TR output to `btcRecipientKey` ≥ `btcSats` |
-| `feeBps > 0`, same key | One P2TR output to `btcRecipientKey` ≥ `btcSats + feeSats` |
-| `feeBps > 0`, different keys | Two outputs: maker ≥ `btcSats` AND fee recipient ≥ `feeSats` |
+Listings include:
 
-**For makers (Cancel Offer):**
-Returns your escrowed tokens/NFT and marks the offer cancelled.
+-   contract address
+-   token ID or token amount
+-   BTC price
+-   optional private buyer
 
----
+------------------------------------------------------------------------
 
-## Wallet support
+### Buy Requests
 
-The app detects wallet extensions in this order:
+If an asset is not listed, users can create a **buy request**.
 
-1. **OPNet native wallet** (`window.opnet`) — full support including `sendOpNetTransaction`
-2. **Unisat** (`window.unisat`) — PSBT signing
-3. **Leather / Hiro** (`window.leather`) — PSBT signing
+A request defines:
 
-If your wallet does not implement `sendOpNetTransaction`, the UI will show you the **raw calldata hex** to submit manually (via OPNet CLI or another tool).
+-   asset contract
+-   NFT token ID or token amount
+-   BTC price offered
 
----
+Sellers can fulfill the request by creating a **private listing** for
+that wallet.
 
-## OPNet selectors
+------------------------------------------------------------------------
 
-OPNet uses **SHA-256** (first 4 bytes) for function selectors, unlike EVM which uses keccak256.
+### Private Listings
 
-| Function | Selector |
-|---|---|
-| `createOffer(address,uint256,uint256,uint256,uint16,address)` | SHA-256[0:4] |
-| `createNFTOffer(address,uint256,uint256,uint256,uint16,address)` | SHA-256[0:4] |
-| `fillOffer(uint256)` | SHA-256[0:4] |
-| `cancelOffer(uint256)` | SHA-256[0:4] |
-| `getOffer(uint256)` | SHA-256[0:4] |
+Private listings restrict a trade to a specific wallet.
 
----
+Use cases:
 
-## Project structure
+-   fulfilling buy requests
+-   OTC trades
+-   direct P2P deals
 
-```
-src/
-  app/
-    layout.tsx          # Root layout (Navbar + WalletProvider)
-    page.tsx            # Home — offer list
-    create/page.tsx     # Create offer form
-    offer/[id]/page.tsx # Offer detail + actions
-  components/
-    Navbar.tsx
-    WalletBar.tsx
-    OfferCard.tsx
-    Field.tsx
-  context/
-    WalletContext.tsx   # React context for wallet state
-  lib/
-    opnet.ts            # OPNet RPC wrapper + helpers
-    wallet.ts           # Wallet detection + connection
-    abi.ts              # Contract ABI definition
-  types/
-    offer.ts            # Offer type + status constants
-```
+Only the specified wallet can purchase the listing.
 
----
+------------------------------------------------------------------------
 
-## Build
+### Atomic Escrow
 
-```bash
-npm run build    # Production build
-npm run dev      # Dev server (hot reload)
-npm run type-check  # TypeScript check only
-```
+Trades are executed through an **OPNet escrow contract**.
+
+Trade flow:
+
+1.  Seller lists asset
+2.  Buyer sends BTC transaction
+3.  Contract verifies required payment outputs
+4.  Asset transfers to buyer
+
+This ensures **atomic settlement**.
+
+------------------------------------------------------------------------
+
+### Wallet Notifications
+
+Users are notified when:
+
+-   a private listing is created for their wallet
+-   transactions are pending
+
+Notifications appear in the **navbar when the wallet connects**.
+
+------------------------------------------------------------------------
+
+## How the Request System Works
+
+Bitcoin cannot be escrowed directly in smart contracts.
+
+To enable buy offers, Satoshi's Market uses a **Request → Listing
+workflow**.
+
+Process:
+
+1.  User creates a buy request
+2.  Sellers view open requests
+3.  Seller fulfills request by creating a private listing
+4.  Buyer receives a notification
+5.  Buyer purchases the listing normally
+
+This enables **buyer liquidity without locking BTC in contracts**.
+
+------------------------------------------------------------------------
+
+## Marketplace Filters
+
+The marketplace supports filtering by:
+
+-   asset type (OP‑721 / OP‑20)
+-   own listings
+-   private listings
+-   listing status
+-   requests vs listings
+
+------------------------------------------------------------------------
+
+## Tech Stack
+
+Frontend
+
+-   Next.js
+-   React
+-   Tailwind CSS
+
+Backend
+
+-   Next.js API routes
+-   Neon Postgres database
+
+Blockchain
+
+-   OPNet
+-   OP‑721 NFT standard
+-   OP‑20 token standard
+
+Infrastructure
+
+-   Vercel hosting
+-   Neon serverless database
+
+------------------------------------------------------------------------
+
+## Running Locally
+
+Clone the repository
+
+    git clone https://github.com/solcollecta/satoshis-market
+    cd satoshis-market
+
+Install dependencies
+
+    npm install
+
+Create a `.env.local` file
+
+    DATABASE_URL=your_neon_database_url
+    NEXT_PUBLIC_OP_RPC_URL=your_rpc_endpoint
+
+Start the development server
+
+    npm run dev
+
+------------------------------------------------------------------------
+
+## Future Improvements
+
+-   improved UI design
+-   collection pages
+-   better mobile support
+-   analytics for requests and listings
+
+------------------------------------------------------------------------
+
+## License
+
+MIT
