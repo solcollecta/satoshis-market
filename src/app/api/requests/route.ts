@@ -21,8 +21,9 @@ export async function GET(req: NextRequest) {
     };
     return NextResponse.json(await listRequests(filter));
   } catch (err) {
-    console.error('[api/requests GET]', err);
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 });
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[api/requests GET]', msg, err);
+    return NextResponse.json({ error: 'Internal error', detail: msg }, { status: 500 });
   }
 }
 
@@ -94,7 +95,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(created, { status: 201 });
   } catch (err) {
-    console.error('[api/requests POST]', err);
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 });
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[api/requests POST]', msg, err);
+    return NextResponse.json({ error: 'Internal error', detail: msg }, { status: 500 });
   }
 }
