@@ -121,28 +121,6 @@ export function OfferCardRow({ offer, createdAt }: Props) {
           )}
         </div>
 
-        {/* Badges */}
-        {isSeller && (
-          <span className="text-[9px] font-bold text-emerald-400 border border-emerald-700/40 bg-emerald-900/20 px-1.5 py-0.5 rounded-full shrink-0 mr-1">
-            Yours
-          </span>
-        )}
-        {offer.allowedTaker !== 0n && (
-          <span className="text-[9px] font-bold text-brand border border-brand/30 px-1.5 py-0.5 rounded-full shrink-0 mr-1">
-            Private
-          </span>
-        )}
-        {offer.status !== 1 && (
-          <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 mr-1 ${statusClass}`}>
-            {OFFER_STATUS[offer.status] ?? 'Unknown'}
-          </span>
-        )}
-
-        {/* Time */}
-        {createdAt != null && (
-          <span className="text-[11px] text-slate-600 shrink-0 mr-2 hidden sm:inline">{formatRelativeCompact(createdAt)}</span>
-        )}
-
         {/* Price */}
         <span className="text-sm font-bold text-white font-mono shrink-0 mr-2 whitespace-nowrap">
           {formatBtcFromSats(offer.btcSatoshis)}
@@ -159,6 +137,30 @@ export function OfferCardRow({ offer, createdAt }: Props) {
           </button>
         ) : (
           <span className="w-10 shrink-0" />
+        )}
+
+        {/* Badges */}
+        <div className="flex items-center gap-1 shrink-0 ml-2">
+          {isSeller && (
+            <span className="text-[9px] font-bold text-emerald-400 border border-emerald-700/40 bg-emerald-900/20 px-1.5 py-0.5 rounded-full">
+              Yours
+            </span>
+          )}
+          {offer.allowedTaker !== 0n && (
+            <span className="text-[9px] font-bold text-brand border border-brand/30 px-1.5 py-0.5 rounded-full">
+              Private
+            </span>
+          )}
+          {offer.status !== 1 && (
+            <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${statusClass}`}>
+              {OFFER_STATUS[offer.status] ?? 'Unknown'}
+            </span>
+          )}
+        </div>
+
+        {/* Time */}
+        {createdAt != null && (
+          <span className="text-[11px] text-slate-600 shrink-0 ml-2 hidden sm:inline">{formatRelativeCompact(createdAt)}</span>
         )}
       </div>
     </>
