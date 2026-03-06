@@ -12,6 +12,10 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
+  .font-mono {
+    font-variant-numeric: tabular-nums;
+  }
+
   body {
     background-color: #080B12;
     color: #F1F5F9;
