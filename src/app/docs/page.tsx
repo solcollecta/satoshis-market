@@ -19,7 +19,7 @@ const SECTIONS = [
   },
   {
     id: 'trading',
-    title: 'How Trading Works',
+    title: 'How It Works',
   },
   {
     id: 'future',
@@ -35,10 +35,10 @@ export default function DocsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-12 space-y-8 animate-fade-in">
+    <div className="mx-auto max-w-3xl px-4 py-12 space-y-2 animate-fade-in">
 
       {/* Hero */}
-      <header className="space-y-4">
+      <header className="space-y-2">
         <h1 className="text-4xl sm:text-5xl font-extrabold text-white tracking-tight">
           Satoshi&apos;s <span className="text-brand">Market</span>
         </h1>
@@ -75,7 +75,7 @@ export default function DocsPage() {
 
         {/* ── Trustless by Design ─────────────────────────────────────── */}
         {page === 0 && (
-          <section className="space-y-8 text-sm text-slate-300 leading-relaxed animate-fade-in">
+          <section className="space-y-5 text-sm text-slate-300 leading-relaxed animate-fade-in">
             <h2 className="text-2xl font-bold text-white">Why Satoshi&apos;s Market Is Trustless by Design</h2>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -143,8 +143,6 @@ export default function DocsPage() {
         {/* ── Comparison ────────────────────────────────────────────────── */}
         {page === 1 && (
           <section className="space-y-8 text-sm text-slate-300 leading-relaxed animate-fade-in">
-            <h2 className="text-2xl font-bold text-white">Comparison</h2>
-
             <div className="overflow-x-auto">
               <table className="w-full text-xs border border-surface-border rounded-xl overflow-hidden">
                 <thead>
@@ -181,7 +179,6 @@ export default function DocsPage() {
         {/* ── Core Features ───────────────────────────────────────────── */}
         {page === 2 && (
           <section className="space-y-8 animate-fade-in">
-            <h2 className="text-2xl font-bold text-white">Core Features</h2>
 
             <div className="space-y-6">
               <div>
@@ -234,10 +231,9 @@ export default function DocsPage() {
           </section>
         )}
 
-        {/* ── How Trading Works ───────────────────────────────────────── */}
+        {/* ── How It Works ───────────────────────────────────────── */}
         {page === 3 && (
-          <section className="space-y-8 animate-fade-in">
-            <h2 className="text-2xl font-bold text-white">How Trading Works</h2>
+          <section className="space-y-5 animate-fade-in">
 
             <div>
               <h3 className="text-sm font-semibold text-white mb-4">For Sellers</h3>
@@ -283,7 +279,6 @@ export default function DocsPage() {
         {/* ── Future Improvements ─────────────────────────────────────── */}
         {page === 4 && (
           <section className="space-y-6 animate-fade-in">
-            <h2 className="text-2xl font-bold text-white">Future Improvements</h2>
             <ul className="list-disc list-inside space-y-2 text-sm text-slate-400">
               <li>Improved UI design</li>
               <li>Semi-hidden private deals</li>
