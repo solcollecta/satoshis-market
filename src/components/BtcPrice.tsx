@@ -36,7 +36,7 @@ export function BtcPrice() {
       <span className="btc-symbol-neon text-brand font-bold text-sm leading-none">
         ₿
       </span>
-      <span className="btc-price-neon text-sm font-semibold text-slate-200 leading-none" style={{ fontVariantNumeric: 'tabular-nums' }}>
+      <span className="btc-price-neon text-sm font-semibold text-slate-200 leading-none" style={{ fontFamily: "'IBM Plex Mono', monospace", fontVariantNumeric: 'tabular-nums' }}>
         {label}
       </span>
     </div>
