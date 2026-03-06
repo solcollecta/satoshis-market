@@ -294,16 +294,16 @@ function AssetsPage() {
 
       {/* Controls — sticky */}
       <div className="sticky top-16 z-30 -mx-4 px-4 py-3 bg-surface/90 backdrop-blur-xl border-b border-surface-border/40">
-        <div className="space-y-2.5">
+        <div className="space-y-3">
 
-          {/* Row 1: All controls in one line */}
-          <div className="flex items-center gap-1.5 flex-wrap">
+          {/* Row 1: Filter pills + View toggle */}
+          <div className="flex items-center gap-2 flex-wrap">
 
             {/* Asset type */}
             <div className={pillGroup}>
               {(['all', 'nft', 'token'] as Filter[]).map(f => (
                 <button key={f} onClick={() => setFilter(f)} className={pill(filter === f)}>
-                  {f === 'all' ? 'All' : f === 'nft' ? 'NFTs' : 'Tokens'}
+                  {f === 'all' ? 'All' : f === 'nft' ? 'OP-721 NFTs' : 'OP-20 Tokens'}
                 </button>
               ))}
             </div>
@@ -331,18 +331,18 @@ function AssetsPage() {
                   title={!address ? 'Connect your wallet first' : undefined}
                   className={pill(mineOnly, !address)}
                 >
-                  Own
+                  Own Listings
                 </button>
                 {address && (
                   <button
                     onClick={() => setPrivateToMe(v => !v)}
-                    className={`px-3 py-1 rounded-md text-xs font-semibold transition-all duration-150 ${
+                    className={`px-3 py-1 rounded-md text-xs font-semibold transition-all duration-150 flex items-center gap-1 ${
                       privateToMe
                         ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm'
                         : 'text-slate-500 hover:text-white'
                     }`}
                   >
-                    Private
+                    Private to me
                   </button>
                 )}
               </div>
@@ -357,38 +357,43 @@ function AssetsPage() {
               />
             )}
 
-            {/* Sort */}
-            <div className={pillGroup}>
-              {(['id_desc', 'price_asc', 'price_desc'] as Sort[]).map(s => (
-                <button key={s} onClick={() => setSort(s)} className={pill(sort === s)}>
-                  {s === 'id_desc' ? 'Newest' : s === 'price_asc' ? 'Price ↑' : 'Price ↓'}
-                </button>
-              ))}
+            {/* Spacer */}
+            <div className="flex-1" />
+
+            {/* View toggle + Refresh */}
+            <div className="flex items-center gap-2 shrink-0">
+              {viewMode === 'listings' && (
+                <ViewToggle value={gridMode} onChange={setGridMode} />
+              )}
+              <button
+                onClick={() => { void load(); if (viewMode === 'requests') void loadRequests(); }}
+                disabled={loading}
+                className="btn-secondary !rounded-lg !py-[7px] !text-sm shrink-0"
+              >
+                {loading ? '...' : 'Refresh'}
+              </button>
             </div>
-
-            {/* Refresh */}
-            <button
-              onClick={() => { void load(); if (viewMode === 'requests') void loadRequests(); }}
-              disabled={loading}
-              className={`${pillGroup} px-2.5 py-1 text-xs font-semibold transition-all duration-150 ${loading ? 'text-slate-700' : 'text-slate-500 hover:text-white'}`}
-            >
-              {loading ? '...' : 'Refresh'}
-            </button>
-
-            {/* View toggle */}
-            {viewMode === 'listings' && (
-              <ViewToggle value={gridMode} onChange={setGridMode} />
-            )}
           </div>
 
-          {/* Row 2: Search */}
-          <input
-            type="search"
-            placeholder="Search by name, ID, seller address, or contract..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full !rounded-lg !py-1.5 !text-sm"
-          />
+          {/* Row 2: Search + sort */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <input
+              type="search"
+              placeholder="Search by name, ID, seller address, or contract..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="flex-1 min-w-48 !rounded-lg !py-1.5 !text-sm"
+            />
+            <select
+              value={sort}
+              onChange={e => setSort(e.target.value as Sort)}
+              className="w-auto !rounded-lg !py-[7px] !text-sm shrink-0"
+            >
+              <option value="price_asc">Price: low → high</option>
+              <option value="price_desc">Price: high → low</option>
+              <option value="id_desc">Newest first</option>
+            </select>
+          </div>
         </div>
       </div>
 
