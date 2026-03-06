@@ -14,7 +14,6 @@ import {
   keyToHex,
   type NftCollectionInfo,
 } from '@/lib/opnet';
-import { CopyableAddress } from './CopyableAddress';
 import { TokenAvatar } from './TokenAvatar';
 import { formatRelativeCompact, formatTokenCompact } from '@/lib/tokens';
 import { useWallet } from '@/context/WalletContext';
@@ -93,90 +92,87 @@ export function OfferCardRow({ offer, createdAt }: Props) {
     <>
       {buyOpen && <QuickBuyModal offer={offer} onClose={() => setBuyOpen(false)} />}
       <div
-        className="group flex items-center gap-4 bg-surface-card border border-surface-border rounded-xl px-4 py-3 transition-all duration-200 hover:border-surface-bright hover:bg-surface-card/80 cursor-pointer"
+        className="group grid items-center bg-surface-card border border-surface-border rounded-xl px-3 py-2.5 transition-all duration-200 hover:border-surface-bright cursor-pointer"
+        style={{ gridTemplateColumns: 'minmax(0, 1fr) auto auto' }}
         onClick={(e) => {
           if ((e.target as HTMLElement).closest('button, a')) return;
           router.push(`/listing/${offer.id.toString()}`);
         }}
       >
-        {/* Avatar */}
-        <div className="shrink-0">
-          {offer.isNFT ? (
-            collection?.icon ? (
-              <img
-                src={collection.icon}
-                alt={nftLabel}
-                className="w-10 h-10 rounded-lg object-cover"
-              />
+        {/* Left: Avatar + Name + Amount + Badges */}
+        <div className="flex items-center gap-3 min-w-0">
+          {/* Avatar */}
+          <div className="shrink-0">
+            {offer.isNFT ? (
+              collection?.icon ? (
+                <img
+                  src={collection.icon}
+                  alt={nftLabel}
+                  className="w-9 h-9 rounded-lg object-cover"
+                />
+              ) : (
+                <div className="w-9 h-9 rounded-lg bg-surface border border-surface-border flex items-center justify-center text-base text-slate-700">
+                  🖼
+                </div>
+              )
             ) : (
-              <div className="w-10 h-10 rounded-lg bg-surface border border-surface-border flex items-center justify-center text-lg text-slate-700">
-                🖼
-              </div>
-            )
-          ) : (
-            <TokenAvatar address={offer.token} symbol={tokenMeta?.symbol ?? ''} size="md" />
-          )}
-        </div>
-
-        {/* Name + contract */}
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-white truncate">{displayName}</p>
-          <div className="flex items-center gap-2 mt-0.5">
-            <CopyableAddress
-              full={offer.token}
-              display={shortAddr(offer.token)}
-              className="text-[11px] text-slate-600"
-            />
-            {!offer.isNFT && amountStr && (
-              <span className="text-[11px] text-slate-500">{amountStr}</span>
+              <TokenAvatar address={offer.token} symbol={tokenMeta?.symbol ?? ''} size="sm" />
             )}
+          </div>
+
+          {/* Name + meta */}
+          <div className="min-w-0 flex items-center gap-2.5">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-white truncate">{displayName}</span>
+                <span className="text-[10px] text-slate-600 font-mono shrink-0">#{offer.id.toString()}</span>
+              </div>
+              <div className="flex items-center gap-2 mt-0.5">
+                {!offer.isNFT && amountStr && (
+                  <span className="text-[11px] text-slate-500">{amountStr}</span>
+                )}
+                {createdAt != null && (
+                  <span className="text-[10px] text-slate-600">{formatRelativeCompact(createdAt)}</span>
+                )}
+              </div>
+            </div>
+
+            {/* Badges inline */}
+            <div className="flex items-center gap-1 shrink-0">
+              {isSeller && (
+                <span className="text-[9px] font-bold text-emerald-400 border border-emerald-700/40 bg-emerald-900/20 px-1.5 py-0.5 rounded-full">
+                  Yours
+                </span>
+              )}
+              {offer.allowedTaker !== 0n && (
+                <span className="text-[9px] font-bold text-brand border border-brand/30 px-1.5 py-0.5 rounded-full">
+                  Private
+                </span>
+              )}
+              {offer.status !== 1 && (
+                <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${statusClass}`}>
+                  {OFFER_STATUS[offer.status] ?? 'Unknown'}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Badges */}
-        <div className="flex items-center gap-1.5 shrink-0">
-          {isSeller && (
-            <span className="text-[10px] font-bold text-emerald-400 border border-emerald-700/40 bg-emerald-900/20 px-2 py-0.5 rounded-full">
-              Yours
-            </span>
-          )}
-          {offer.allowedTaker !== 0n && (
-            <span className="text-[10px] font-bold text-brand border border-brand/30 px-2 py-0.5 rounded-full">
-              Private
-            </span>
-          )}
-          {offer.status !== 1 && (
-            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${statusClass}`}>
-              {OFFER_STATUS[offer.status] ?? 'Unknown'}
-            </span>
-          )}
-        </div>
-
-        {/* Price */}
-        <div className="text-right shrink-0 min-w-[100px]">
-          <p className="text-sm font-bold text-white font-mono">
+        {/* Right: Price + Buy grouped together */}
+        <div className="flex items-center gap-3 pl-4">
+          <p className="text-sm font-bold text-white font-mono whitespace-nowrap">
             {formatBtcFromSats(offer.btcSatoshis)}
           </p>
-          <p className="text-[10px] text-slate-600 mt-0.5">
-            #{offer.id.toString()}
-            {createdAt != null && (
-              <span className="ml-1.5">{formatRelativeCompact(createdAt)}</span>
-            )}
-          </p>
-        </div>
-
-        {/* Buy button */}
-        <div className="shrink-0 w-16">
           {isOpen && !isSeller ? (
             <button
               type="button"
               onClick={() => setBuyOpen(true)}
-              className="w-full cursor-pointer text-[11px] font-bold bg-brand text-black px-3 py-1.5 rounded-lg border border-brand transition-all duration-150 drop-shadow-[0_0_6px_rgba(247,147,26,0.3)] hover:bg-transparent hover:text-brand hover:drop-shadow-[0_0_10px_rgba(247,147,26,0.85)] active:bg-brand active:text-black"
+              className="cursor-pointer text-[11px] font-bold bg-brand text-black px-3 py-1 rounded-lg border border-brand transition-all duration-150 drop-shadow-[0_0_6px_rgba(247,147,26,0.3)] hover:bg-transparent hover:text-brand hover:drop-shadow-[0_0_10px_rgba(247,147,26,0.85)] active:bg-brand active:text-black"
             >
               Buy
             </button>
           ) : (
-            <span />
+            <div className="w-[52px]" />
           )}
         </div>
       </div>

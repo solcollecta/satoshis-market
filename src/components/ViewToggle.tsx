@@ -1,6 +1,6 @@
 'use client';
 
-type ViewMode = 'grid' | 'large' | 'list';
+type ViewMode = 'grid' | 'list';
 
 interface Props {
   value: ViewMode;
@@ -20,17 +20,7 @@ const modes: { key: ViewMode; label: string; icon: JSX.Element }[] = [
       </svg>
     ),
   },
-  {
-    key: 'large',
-    label: 'Large',
-    icon: (
-      <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
-        <rect x="1" y="1" width="6.5" height="14" rx="1.5" />
-        <rect x="8.5" y="1" width="6.5" height="14" rx="1.5" />
-      </svg>
-    ),
-  },
-  {
+{
     key: 'list',
     label: 'List',
     icon: (

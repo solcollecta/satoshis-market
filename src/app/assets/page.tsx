@@ -33,7 +33,7 @@ type Filter    = 'all' | 'nft' | 'token';
 type Sort      = 'price_asc' | 'price_desc' | 'id_desc';
 type StatusKey = 'sold' | 'cancelled' | 'private';
 type ViewModeMarket  = 'listings' | 'requests';
-type GridMode  = 'grid' | 'large' | 'list';
+type GridMode  = 'grid' | 'list';
 
 const STATUS_OPTIONS: { key: StatusKey; label: string }[] = [
   { key: 'sold',      label: 'Sold'      },
@@ -251,16 +251,14 @@ function AssetsPage() {
 
   // ── Grid class based on view mode ────────────────────────────────────────
   const gridClass =
-    gridMode === 'large' ? 'grid gap-5 grid-cols-1 sm:grid-cols-2' :
-    gridMode === 'list'  ? 'flex flex-col gap-2' :
-                           'grid gap-4 sm:grid-cols-2 lg:grid-cols-3';
+    gridMode === 'list' ? 'flex flex-col gap-2' :
+                          'grid gap-4 sm:grid-cols-2 lg:grid-cols-3';
 
   const skeletonClass =
-    gridMode === 'large' ? 'skeleton h-72 rounded-2xl' :
-    gridMode === 'list'  ? 'skeleton h-16 rounded-xl' :
-                           'skeleton h-52 rounded-2xl';
+    gridMode === 'list' ? 'skeleton h-16 rounded-xl' :
+                          'skeleton h-52 rounded-2xl';
 
-  const skeletonCount = gridMode === 'list' ? 12 : gridMode === 'large' ? 6 : 9;
+  const skeletonCount = gridMode === 'list' ? 12 : 9;
 
   const isLoading = loading || (viewMode === 'requests' && requestsLoading);
   const resultCount = viewMode === 'listings' ? displayed.length : displayedRequests.length;
