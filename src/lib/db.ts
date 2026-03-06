@@ -35,9 +35,13 @@ export async function ensureTable() {
       restricted_seller  TEXT,
       fulfilled_at       BIGINT,
       fulfilled_by       TEXT,
-      listing_id         TEXT
+      listing_id         TEXT,
+      shared_fees        BOOLEAN DEFAULT FALSE
     )
   `;
+
+  // Migration: add shared_fees column if missing (existing tables)
+  await sql`ALTER TABLE requests ADD COLUMN IF NOT EXISTS shared_fees BOOLEAN DEFAULT FALSE`;
 
   _initialized = true;
 }

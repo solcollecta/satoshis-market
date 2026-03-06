@@ -15,6 +15,7 @@ import {
   fetchTokenInfo,
   fetchAllowance,
   fetchNftApproval,
+  formatBtcFromSats,
   type NftEntry,
 } from '@/lib/opnet';
 import { parseUnits, parseBtcToSats, formatUnits, formatTokenBalance, saveListingTimestamp, type CachedToken } from '@/lib/tokens';
@@ -56,6 +57,8 @@ function CreateOfferPage() {
   const [btcValue, setBtcValue] = useState('');
   const [allowedTaker, setAllowedTaker] = useState('');
   const [privateBuyerLocked, setPrivateBuyerLocked] = useState(false);
+  const [sharedFees, setSharedFees] = useState(false);
+  const [sharedFeesLocked, setSharedFeesLocked] = useState(false);
 
   /** Derived from connected wallet — no user input, no RPC needed */
   const makerRecipientKey = address ? (p2trAddressToKeyHex(address) ?? '') : '';
@@ -87,6 +90,26 @@ function CreateOfferPage() {
     }
     return null;
   })();
+
+  // ── Shared fees calculation ──────────────────────────────────────────────
+  const sharedFeesInfo = (() => {
+    if (!sharedFees || btcSatsRaw === 0n) return null;
+    const halfRate = BigInt(Math.floor(PLATFORM_FEE_BPS / 2));
+    const adjustedSats = btcSatsRaw * (10_000n - halfRate) / 10_000n;
+    const adjustedFee = adjustedSats * BigInt(PLATFORM_FEE_BPS) / 10_000n;
+    const sellerCost = btcSatsRaw - adjustedSats;
+    const buyerCost = adjustedSats + adjustedFee - btcSatsRaw;
+    return {
+      originalSats: btcSatsRaw,
+      adjustedSats,
+      adjustedFee,
+      sellerCost,
+      buyerCost,
+      buyerTotal: adjustedSats + adjustedFee,
+    };
+  })();
+
+  const effectiveBtcSats = sharedFeesInfo ? sharedFeesInfo.adjustedSats : btcSatsRaw;
 
   // ── NFT contract address persistence ─────────────────────────────────────
   const NFT_CONTRACT_KEY = 'nft_contract_v1';
@@ -215,6 +238,12 @@ function CreateOfferPage() {
       setPrivateBuyerLocked(true);
     }
 
+    // Shared fees (from request)
+    if (searchParams.get('sharedFees') === '1') {
+      setSharedFees(true);
+      setSharedFeesLocked(true);
+    }
+
     // Request ID (no re-render needed)
     if (requestId_p) requestIdRef.current = requestId_p;
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -315,7 +344,7 @@ function CreateOfferPage() {
       return [
         tokenAddress,
         tokenAmountRaw,
-        btcSatsRaw,
+        effectiveBtcSats,
         hexToBigint(makerRecipientKey),
         PLATFORM_FEE_BPS,
         taker,
@@ -324,7 +353,7 @@ function CreateOfferPage() {
     return [
       tokenAddress,
       BigInt(tokenId),
-      btcSatsRaw,
+      effectiveBtcSats,
       hexToBigint(makerRecipientKey),
       PLATFORM_FEE_BPS,
       taker,
@@ -672,7 +701,7 @@ function CreateOfferPage() {
 
           {/* BTC price */}
           <div>
-            <label htmlFor="btc-value">BTC price</label>
+            <label htmlFor="btc-value">{sharedFees ? 'Desired BTC price' : 'BTC price'}</label>
             <div className="relative">
               <input
                 id="btc-value"
@@ -691,10 +720,20 @@ function CreateOfferPage() {
                 BTC
               </span>
             </div>
-            {btcSatsRaw > 0n && (
+            {btcSatsRaw > 0n && !sharedFeesInfo && (
               <p className="text-xs text-slate-500 mt-1">
                 = {btcSatsRaw.toLocaleString()} sats
               </p>
+            )}
+            {sharedFeesInfo && (
+              <div className="mt-1.5 rounded-lg bg-emerald-900/15 border border-emerald-800/30 px-3 py-2">
+                <p className="text-xs text-slate-400">
+                  Actual listing price:{' '}
+                  <span className="text-white font-semibold font-mono">
+                    {formatBtcFromSats(sharedFeesInfo.adjustedSats)}
+                  </span>
+                </p>
+              </div>
             )}
           </div>
 
@@ -706,7 +745,7 @@ function CreateOfferPage() {
                 0.5%
                 {btcSatsRaw > 0n && (
                   <span className="text-xs text-slate-500 font-normal ml-2">
-                    = {Math.ceil(Number(btcSatsRaw) * PLATFORM_FEE_BPS / 10_000).toLocaleString()} sats
+                    = {formatBtcFromSats(BigInt(Math.ceil(Number(btcSatsRaw) * PLATFORM_FEE_BPS / 10_000)))}
                   </span>
                 )}
               </span>
@@ -715,6 +754,76 @@ function CreateOfferPage() {
               <p className="text-xs text-red-400 mt-1.5 px-1">{feeDustError}</p>
             )}
           </div>
+
+          {/* Share fees toggle — only interactive once a price is entered */}
+          {(() => {
+            const canToggle = btcSatsRaw > 0n && !sharedFeesLocked;
+            const isDisabled = btcSatsRaw === 0n && !sharedFeesLocked;
+            return (
+              <div
+                className={`rounded-xl border p-4 transition-colors duration-200 ${
+                  sharedFees
+                    ? 'border-emerald-600/40 bg-emerald-900/10'
+                    : 'border-surface-border bg-surface/40'
+                }${isDisabled ? ' opacity-40' : ''}${canToggle ? ' cursor-pointer' : ''}`}
+                onClick={() => canToggle && setSharedFees(!sharedFees)}
+              >
+                <label className={`flex items-center gap-3${canToggle ? ' cursor-pointer' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={sharedFees}
+                    onChange={(e) => canToggle && setSharedFees(e.target.checked)}
+                    disabled={isDisabled || sharedFeesLocked}
+                    className="w-4 h-4 rounded accent-emerald-500"
+                  />
+                  <div>
+                    <span className="text-sm font-semibold text-slate-200">
+                      Share fees 50/50 with buyer
+                    </span>
+                    {sharedFeesLocked && (
+                      <span className="ml-2 text-[10px] font-bold text-amber-400 border border-amber-700/40 bg-amber-900/20 px-2 py-0.5 rounded-full">
+                        from request
+                      </span>
+                    )}
+                    {isDisabled && (
+                      <p className="text-xs text-slate-600 mt-0.5">Enter a BTC price first</p>
+                    )}
+                  </div>
+                </label>
+
+                {/* Breakdown panel — only when price is entered and toggle is on */}
+                {sharedFees && sharedFeesInfo && (
+                  <div className="mt-3 pt-3 border-t border-emerald-800/30 space-y-1.5 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Your desired price</span>
+                      <span className="text-slate-300 font-mono">{formatBtcFromSats(sharedFeesInfo.originalSats)} BTC</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Adjusted listing price</span>
+                      <span className="text-white font-mono font-semibold">{formatBtcFromSats(sharedFeesInfo.adjustedSats)} BTC</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Fee on adjusted price</span>
+                      <span className="text-slate-300 font-mono">{formatBtcFromSats(sharedFeesInfo.adjustedFee)} BTC</span>
+                    </div>
+                    <div className="border-t border-emerald-800/20 pt-1.5 mt-1.5" />
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Your share</span>
+                      <span className="text-emerald-400 font-mono">-{formatBtcFromSats(sharedFeesInfo.sellerCost)} BTC</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Buyer&apos;s share</span>
+                      <span className="text-emerald-400 font-mono">-{formatBtcFromSats(sharedFeesInfo.buyerCost)} BTC</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Buyer pays total</span>
+                      <span className="text-white font-mono font-semibold">{formatBtcFromSats(sharedFeesInfo.buyerTotal)} BTC</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Private buyer */}
           <div className={`rounded-xl border p-4 transition-colors duration-200 ${

@@ -21,6 +21,7 @@ export default function RequestCreatePage() {
   const [btcValue, setBtcValue]           = useState('');
   const [tokenDecimals, setTokenDecimals] = useState(8);
   const [tokenMeta, setTokenMeta]         = useState<{ name: string; symbol: string } | null>(null);
+  const [sharedFees, setSharedFees]       = useState(false);
   const [submitting, setSubmitting]       = useState(false);
   const [error, setError]                 = useState<string | null>(null);
 
@@ -73,6 +74,7 @@ export default function RequestCreatePage() {
         tokenSymbol:      tokenMeta?.symbol ?? undefined,
         tokenName:        tokenMeta?.name   ?? undefined,
       };
+      if (sharedFees) body.sharedFees = true;
       if (mode === 'op20') {
         body.tokenAmountRaw = tokenAmountRaw.toString();
         body.tokenDecimals  = tokenDecimals;
@@ -265,6 +267,33 @@ export default function RequestCreatePage() {
             {btcSatsRaw > 0n && (
               <p className="text-xs text-slate-500 mt-1">= {btcSatsRaw.toLocaleString()} sats</p>
             )}
+          </div>
+
+          {/* Share fees toggle */}
+          <div
+            className={`rounded-xl border p-4 transition-colors duration-200 cursor-pointer ${
+              sharedFees
+                ? 'border-emerald-600/40 bg-emerald-900/10'
+                : 'border-surface-border bg-surface/40'
+            }`}
+            onClick={() => setSharedFees(!sharedFees)}
+          >
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={sharedFees}
+                onChange={(e) => setSharedFees(e.target.checked)}
+                className="w-4 h-4 rounded accent-emerald-500"
+              />
+              <div>
+                <p className="text-sm font-semibold text-slate-200">
+                  Share platform fees 50/50
+                </p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Seller adjusts listing price so both sides split the fee equally.
+                </p>
+              </div>
+            </label>
           </div>
 
           {/* Validation error */}

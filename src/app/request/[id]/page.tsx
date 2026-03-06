@@ -121,6 +121,7 @@ export default function RequestDetailPage() {
       if (r.tokenName)   p.set('tokenName',   r.tokenName);
     }
     if (r.assetType === 'op721' && r.tokenId) p.set('tokenId', r.tokenId);
+    if (r.sharedFees) p.set('sharedFees', '1');
     return `/create?${p.toString()}`;
   };
 
@@ -263,6 +264,11 @@ export default function RequestDetailPage() {
               className="text-[10px] font-semibold text-brand hover:underline mt-1 block">OPScan</a>
           </DCell>
           <DCell label="Standard">{request.assetType === 'op721' ? 'OP-721 NFT' : 'OP-20 Token'}</DCell>
+          {request.sharedFees && (
+            <DCell label="Fee split">
+              <span className="text-emerald-400 text-sm font-semibold">50/50 shared</span>
+            </DCell>
+          )}
           {request.assetType === 'op721' && (
             <DCell label="Token ID">{request.tokenId ? `#${request.tokenId}` : 'Any from collection'}</DCell>
           )}

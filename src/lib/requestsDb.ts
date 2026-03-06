@@ -25,6 +25,7 @@ export interface BuyRequest {
   fulfilledAt:      number | null;
   fulfilledBy:      string | null;
   listingId:        string | null;
+  sharedFees:       boolean;
 }
 
 // ── Row mapping ───────────────────────────────────────────────────────────────
@@ -47,6 +48,7 @@ interface RawRow {
   fulfilled_at:      string | null;
   fulfilled_by:      string | null;
   listing_id:        string | null;
+  shared_fees:       boolean | null;
 }
 
 function rowToRequest(row: RawRow): BuyRequest {
@@ -68,6 +70,7 @@ function rowToRequest(row: RawRow): BuyRequest {
     fulfilledAt:      row.fulfilled_at ? Number(row.fulfilled_at) : null,
     fulfilledBy:      row.fulfilled_by,
     listingId:        row.listing_id,
+    sharedFees:       !!row.shared_fees,
   };
 }
 
@@ -128,6 +131,7 @@ export interface CreateRequestData {
   tokenId?:         string;
   btcSats:          string;
   restrictedSeller?: string;
+  sharedFees?:      boolean;
 }
 
 export async function createRequest(data: CreateRequestData): Promise<BuyRequest> {
@@ -141,14 +145,14 @@ export async function createRequest(data: CreateRequestData): Promise<BuyRequest
       id, created_at, updated_at, status,
       requester_address, asset_type, contract_address,
       token_amount_raw, token_decimals, token_symbol, token_name,
-      token_id, btc_sats, restricted_seller
+      token_id, btc_sats, restricted_seller, shared_fees
     ) VALUES (
       ${id}, ${now}, ${now}, ${'open'},
       ${data.requesterAddress}, ${data.assetType}, ${data.contractAddress},
       ${data.tokenAmountRaw ?? null}, ${data.tokenDecimals ?? null},
       ${data.tokenSymbol ?? null}, ${data.tokenName ?? null},
       ${data.tokenId ?? null}, ${data.btcSats},
-      ${data.restrictedSeller ?? null}
+      ${data.restrictedSeller ?? null}, ${data.sharedFees ?? false}
     )
   `;
 

@@ -79,6 +79,7 @@ export async function POST(req: NextRequest) {
     const tokenSymbol      = typeof body.tokenSymbol      === 'string' ? body.tokenSymbol.trim()      || undefined : undefined;
     const tokenName        = typeof body.tokenName        === 'string' ? body.tokenName.trim()        || undefined : undefined;
     const restrictedSeller = typeof body.restrictedSeller === 'string' ? body.restrictedSeller.trim() || undefined : undefined;
+    const sharedFees       = body.sharedFees === true;
 
     const created = await createRequest({
       requesterAddress,
@@ -91,6 +92,7 @@ export async function POST(req: NextRequest) {
       tokenId,
       btcSats: btcSats.toString(),
       restrictedSeller,
+      sharedFees,
     });
 
     return NextResponse.json(created, { status: 201 });
