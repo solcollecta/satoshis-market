@@ -25,12 +25,13 @@ import { OfferCardRow } from '@/components/OfferCardRow';
 import { RequestCard } from '@/components/RequestCard';
 import { AssetNav } from '@/components/AssetNav';
 import { StatusDropdown } from '@/components/StatusDropdown';
+import { SortDropdown } from '@/components/SortDropdown';
 import { ViewToggle } from '@/components/ViewToggle';
 import { useWallet } from '@/context/WalletContext';
 import { getAllListingTimestamps } from '@/lib/tokens';
 
 type Filter    = 'all' | 'nft' | 'token';
-type Sort      = 'price_asc' | 'price_desc' | 'id_desc';
+type Sort      = 'price_asc' | 'price_desc' | 'id_desc' | 'id_asc';
 type StatusKey = 'sold' | 'cancelled' | 'private';
 type ViewModeMarket  = 'listings' | 'requests';
 type GridMode  = 'grid' | 'list';
@@ -39,6 +40,13 @@ const STATUS_OPTIONS: { key: StatusKey; label: string }[] = [
   { key: 'sold',      label: 'Sold'      },
   { key: 'cancelled', label: 'Cancelled' },
   { key: 'private',   label: 'Private'   },
+];
+
+const SORT_OPTIONS: { key: string; label: string }[] = [
+  { key: 'id_desc',    label: 'Latest'            },
+  { key: 'id_asc',     label: 'Oldest'            },
+  { key: 'price_asc',  label: 'Price: low → high' },
+  { key: 'price_desc', label: 'Price: high → low' },
 ];
 
 export default function AssetsPageWrapper() {
@@ -57,7 +65,7 @@ function AssetsPage() {
   const [error, setError]     = useState<string | null>(null);
 
   const [search, setSearch]     = useState(searchParams.get('token') ?? '');
-  const [filter, setFilter]     = useState<Filter>('all');
+  const [filter, setFilter]     = useState<Filter>('nft');
   const [sort, setSort]         = useState<Sort>('id_desc');
   const [statusFilters, setStatusFilters] = useState<Set<StatusKey>>(new Set());
   const [mineOnly, setMineOnly] = useState(false);
@@ -206,6 +214,7 @@ function AssetsPage() {
     if (sort === 'price_asc')  list = [...list].sort((a, b) => a.btcSatoshis < b.btcSatoshis ? -1 : 1);
     if (sort === 'price_desc') list = [...list].sort((a, b) => a.btcSatoshis > b.btcSatoshis ? -1 : 1);
     if (sort === 'id_desc')    list = [...list].sort((a, b) => a.id > b.id ? -1 : 1);
+    if (sort === 'id_asc')     list = [...list].sort((a, b) => a.id < b.id ? -1 : 1);
 
     const q = search.trim().toLowerCase();
     if (q) {
@@ -266,7 +275,7 @@ function AssetsPage() {
   const isLoading = loading || (viewMode === 'requests' && requestsLoading);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
 
       {/* Header */}
       <div className="flex items-start justify-between gap-4 pt-2 flex-wrap">
@@ -317,17 +326,16 @@ function AssetsPage() {
               ))}
             </div>
 
+            {/* Grid / List view */}
+            {viewMode === 'listings' && (
+              <ViewToggle value={gridMode} onChange={setGridMode} />
+            )}
+
             {/* User filter (Listings only) */}
             {viewMode === 'listings' && (
               <div className={pillGroup}>
                 <button
-                  onClick={() => { setMineOnly(false); setPrivateToMe(false); }}
-                  className={pill(!mineOnly && !privateToMe)}
-                >
-                  All
-                </button>
-                <button
-                  onClick={() => address && setMineOnly(v => !v)}
+                  onClick={() => address && setMineOnly(v => { if (v) return false; setPrivateToMe(false); return true; })}
                   title={!address ? 'Connect your wallet first' : undefined}
                   className={pill(mineOnly, !address)}
                 >
@@ -335,18 +343,21 @@ function AssetsPage() {
                 </button>
                 {address && (
                   <button
-                    onClick={() => setPrivateToMe(v => !v)}
-                    className={`px-3 py-1 rounded-md text-xs font-semibold transition-all duration-150 flex items-center gap-1 ${
+                    onClick={() => setPrivateToMe(v => { if (v) return false; setMineOnly(false); return true; })}
+                    className={`px-3 py-1 rounded-md text-xs font-semibold transition-all duration-150 ${
                       privateToMe
                         ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm'
                         : 'text-slate-500 hover:text-white'
                     }`}
                   >
-                    Private to me
+                    My Deals
                   </button>
                 )}
               </div>
             )}
+
+            {/* Spacer */}
+            <div className="flex-1" />
 
             {/* Status dropdown (Listings only) */}
             {viewMode === 'listings' && (
@@ -357,43 +368,45 @@ function AssetsPage() {
               />
             )}
 
-            {/* Spacer */}
-            <div className="flex-1" />
-
-            {/* View toggle + Refresh */}
-            <div className="flex items-center gap-2 shrink-0">
-              {viewMode === 'listings' && (
-                <ViewToggle value={gridMode} onChange={setGridMode} />
-              )}
-              <button
-                onClick={() => { void load(); if (viewMode === 'requests') void loadRequests(); }}
-                disabled={loading}
-                className="btn-secondary !rounded-lg !py-[7px] !text-sm shrink-0"
-              >
-                {loading ? '...' : 'Refresh'}
-              </button>
-            </div>
-          </div>
-
-          {/* Row 2: Search + sort */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <input
-              type="search"
-              placeholder="Search by name, ID, seller address, or contract..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="flex-1 min-w-48 !rounded-lg !py-1.5 !text-sm"
-            />
-            <select
+            {/* Sort */}
+            <SortDropdown
+              options={SORT_OPTIONS}
               value={sort}
-              onChange={e => setSort(e.target.value as Sort)}
-              className="w-auto !rounded-lg !py-[7px] !text-sm shrink-0"
+              onChange={s => setSort(s as Sort)}
+            />
+
+            {/* Refresh */}
+            <button
+              type="button"
+              onClick={() => { void load(); if (viewMode === 'requests') void loadRequests(); }}
+              disabled={loading}
+              style={{
+                display:         'inline-flex',
+                alignItems:      'center',
+                backgroundColor: '#0E1320',
+                border:          '1px solid #1A2236',
+                borderRadius:    '0.625rem',
+                padding:         '0.375rem 1rem',
+                fontSize:        '0.875rem',
+                color:           loading ? '#334155' : '#F1F5F9',
+                cursor:          loading ? 'not-allowed' : 'pointer',
+                whiteSpace:      'nowrap',
+                lineHeight:      '1.5',
+                flexShrink:      0,
+              }}
             >
-              <option value="price_asc">Price: low → high</option>
-              <option value="price_desc">Price: high → low</option>
-              <option value="id_desc">Newest first</option>
-            </select>
+              {loading ? '...' : 'Refresh'}
+            </button>
           </div>
+
+          {/* Row 2: Search */}
+          <input
+            type="search"
+            placeholder="Search by name, ID, seller address, or contract..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="w-full !rounded-lg !py-1.5 !text-sm"
+          />
         </div>
       </div>
 

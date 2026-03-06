@@ -28,12 +28,9 @@ export function Navbar() {
               priority
             />
           </div>
-          <div className="flex flex-col">
-            <span className="font-bold text-white text-[15px] tracking-tight">
-              Satoshi&apos;s Market
-            </span>
-            <BtcPrice />
-          </div>
+          <span className="font-bold text-white text-[15px] tracking-tight">
+            Satoshi&apos;s Market
+          </span>
         </Link>
 
         {/* Marketplace + Social links */}
@@ -88,6 +85,7 @@ export function Navbar() {
           >
             <Image src="/opnet-logo.svg" alt="OPNet" width={40} height={15} />
           </a>
+          <BtcPrice />
         </div>
 
         {/* Spacer */}
