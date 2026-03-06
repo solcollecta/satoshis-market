@@ -91,8 +91,7 @@ export function OfferCardRow({ offer, createdAt }: Props) {
     <>
       {buyOpen && <QuickBuyModal offer={offer} onClose={() => setBuyOpen(false)} />}
       <div
-        className="group grid items-center bg-surface-card border border-surface-border rounded-xl px-3 py-2.5 transition-all duration-150 hover:border-surface-bright cursor-pointer"
-        style={{ gridTemplateColumns: '2.5rem 2.5rem minmax(0,1fr) auto auto auto auto' }}
+        className="group flex items-center bg-surface-card border border-surface-border rounded-xl px-3 py-2.5 transition-all duration-150 hover:border-surface-bright cursor-pointer max-w-4xl"
         onClick={(e) => {
           if ((e.target as HTMLElement).closest('button, a')) return;
           router.push(`/listing/${offer.id.toString()}`);
@@ -111,60 +110,56 @@ export function OfferCardRow({ offer, createdAt }: Props) {
           <TokenAvatar address={offer.token} symbol={tokenMeta?.symbol ?? ''} size="sm" />
         )}
 
-        {/* Col 2: ID */}
-        <span className="text-[11px] text-brand font-mono">#{offer.id.toString()}</span>
+        {/* ID */}
+        <span className="text-[11px] text-brand font-mono ml-2.5 shrink-0">#{offer.id.toString()}</span>
 
-        {/* Col 3: Name + Amount */}
-        <div className="min-w-0 px-1">
+        {/* Name + Amount */}
+        <div className="min-w-0 ml-2 mr-2">
           <p className="text-sm font-semibold text-white truncate">{displayName}</p>
           {!offer.isNFT && amountStr && (
             <p className="text-[11px] text-slate-500 truncate">{amountStr}</p>
           )}
         </div>
 
-        {/* Col 4: Badges */}
-        <div className="flex items-center gap-1 px-2">
-          {isSeller && (
-            <span className="text-[9px] font-bold text-emerald-400 border border-emerald-700/40 bg-emerald-900/20 px-1.5 py-0.5 rounded-full">
-              Yours
-            </span>
-          )}
-          {offer.allowedTaker !== 0n && (
-            <span className="text-[9px] font-bold text-brand border border-brand/30 px-1.5 py-0.5 rounded-full">
-              Private
-            </span>
-          )}
-          {offer.status !== 1 && (
-            <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${statusClass}`}>
-              {OFFER_STATUS[offer.status] ?? 'Unknown'}
-            </span>
-          )}
-        </div>
+        {/* Badges */}
+        {isSeller && (
+          <span className="text-[9px] font-bold text-emerald-400 border border-emerald-700/40 bg-emerald-900/20 px-1.5 py-0.5 rounded-full shrink-0 mr-1">
+            Yours
+          </span>
+        )}
+        {offer.allowedTaker !== 0n && (
+          <span className="text-[9px] font-bold text-brand border border-brand/30 px-1.5 py-0.5 rounded-full shrink-0 mr-1">
+            Private
+          </span>
+        )}
+        {offer.status !== 1 && (
+          <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 mr-1 ${statusClass}`}>
+            {OFFER_STATUS[offer.status] ?? 'Unknown'}
+          </span>
+        )}
 
-        {/* Col 5: Time */}
-        <span className="text-[11px] text-slate-600 px-2 hidden sm:block">
-          {createdAt != null ? formatRelativeCompact(createdAt) : ''}
-        </span>
+        {/* Time */}
+        {createdAt != null && (
+          <span className="text-[11px] text-slate-600 shrink-0 mr-2 hidden sm:inline">{formatRelativeCompact(createdAt)}</span>
+        )}
 
-        {/* Col 6: Price */}
-        <span className="text-sm font-bold text-white font-mono text-right px-2 whitespace-nowrap">
+        {/* Price */}
+        <span className="text-sm font-bold text-white font-mono shrink-0 mr-2 whitespace-nowrap">
           {formatBtcFromSats(offer.btcSatoshis)}
         </span>
 
-        {/* Col 7: Buy */}
-        <div className="w-14 flex justify-end">
-          {isOpen && !isSeller ? (
-            <button
-              type="button"
-              onClick={() => setBuyOpen(true)}
-              className="cursor-pointer text-[11px] font-bold bg-brand text-black px-3 py-1 rounded-lg border border-brand transition-all duration-150 drop-shadow-[0_0_6px_rgba(247,147,26,0.3)] hover:bg-transparent hover:text-brand hover:drop-shadow-[0_0_10px_rgba(247,147,26,0.85)] active:bg-brand active:text-black"
-            >
-              Buy
-            </button>
-          ) : (
-            <span />
-          )}
-        </div>
+        {/* Buy */}
+        {isOpen && !isSeller ? (
+          <button
+            type="button"
+            onClick={() => setBuyOpen(true)}
+            className="cursor-pointer text-[11px] font-bold bg-brand text-black px-3 py-1 rounded-lg border border-brand transition-all duration-150 drop-shadow-[0_0_6px_rgba(247,147,26,0.3)] hover:bg-transparent hover:text-brand hover:drop-shadow-[0_0_10px_rgba(247,147,26,0.85)] active:bg-brand active:text-black shrink-0"
+          >
+            Buy
+          </button>
+        ) : (
+          <span className="w-10 shrink-0" />
+        )}
       </div>
     </>
   );
