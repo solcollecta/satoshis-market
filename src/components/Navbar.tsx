@@ -28,9 +28,12 @@ export function Navbar() {
               priority
             />
           </div>
-          <span className="font-bold text-white text-[15px] tracking-tight">
-            Satoshi&apos;s Market
-          </span>
+          <div className="flex flex-col">
+            <span className="font-bold text-white text-[15px] tracking-tight">
+              Satoshi&apos;s Market
+            </span>
+            <BtcPrice />
+          </div>
         </Link>
 
         {/* Marketplace + Social links */}
@@ -92,7 +95,6 @@ export function Navbar() {
 
         {/* BTC price + Pending transactions + Wallet */}
         <div className="flex items-center gap-2.5 shrink-0">
-          <BtcPrice />
           <div className="flex items-center gap-2">
             <PendingTxsIndicator />
             <PrivateListingsIndicator />
