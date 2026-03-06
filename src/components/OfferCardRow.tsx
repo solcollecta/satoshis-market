@@ -114,10 +114,10 @@ export function OfferCardRow({ offer, createdAt }: Props) {
         <span className="text-[11px] text-brand font-mono ml-2.5 shrink-0">#{offer.id.toString()}</span>
 
         {/* Name + Amount */}
-        <div className="min-w-0 ml-2 mr-2">
-          <p className="text-sm font-semibold text-white truncate">{displayName}</p>
+        <div className="min-w-0 ml-2 mr-2 flex items-baseline gap-1.5">
+          <span className="text-sm font-semibold text-white truncate">{displayName}</span>
           {!offer.isNFT && amountStr && (
-            <p className="text-[11px] text-slate-500 truncate">{amountStr}</p>
+            <span className="text-sm text-slate-400 truncate shrink-0">{amountStr}</span>
           )}
         </div>
 
