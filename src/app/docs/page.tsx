@@ -47,6 +47,8 @@ export default function DocsPage() {
         </p>
       </header>
 
+      <div className="h-2" />
+
       {/* Section nav dots */}
       <div className="flex items-center gap-3">
         {SECTIONS.map((s, i) => (
@@ -153,9 +155,9 @@ export default function DocsPage() {
                 </thead>
                 <tbody className="divide-y divide-surface-border">
                   {[
-                    ['Must trust the escrow agent to be honest', 'Trust only the smart contract code'],
+                    ['Must trust the escrow agent to be honest', 'Trust only the audited smart contract'],
                     ['Escrow holds both BTC and assets', 'Contract holds only tokens / NFTs, never BTC'],
-                    ['Escrow agent can disappear with funds', 'No middleman, no rug-pull possible'],
+                    ['Escrow agent can disappear with funds', 'No middleman, funds cannot be taken'],
                     ['All parties must be online at the same time', 'Trade 24/7, no coordination needed'],
                     ['Multi-step process with waiting periods', 'Single atomic transaction'],
                     ['Human error: wrong address, wrong amount', 'Code executes exactly as written'],
