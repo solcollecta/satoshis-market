@@ -91,8 +91,14 @@ export function Navbar() {
         {/* Spacer */}
         <div className="flex-1" />
 
-        {/* BTC price + Pending transactions + Wallet */}
+        {/* Actions + Indicators + Wallet */}
         <div className="flex items-center gap-2.5 shrink-0">
+          <Link href="/create" className="btn-primary shrink-0 !text-xs !py-1.5 !px-3">
+            +List
+          </Link>
+          <Link href="/request/create" className="btn-secondary shrink-0 !text-xs !py-1.5 !px-3">
+            +Request
+          </Link>
           <div className="flex items-center gap-2">
             <PendingTxsIndicator />
             <PrivateListingsIndicator />

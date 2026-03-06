@@ -278,27 +278,17 @@ function AssetsPage() {
     <div className="space-y-3">
 
       {/* Header */}
-      <div className="flex items-start justify-between gap-4 pt-2 flex-wrap">
-        <div>
-          <AssetNav />
-          {!loading && offers.length > 0 && (
-            <div className="flex items-center gap-3 mt-1.5 text-xs text-slate-500">
-              <span><span className="text-white font-semibold">{openOffers.length}</span> open</span>
-              <span className="text-slate-700">·</span>
-              <span><span className="text-white font-semibold">{nftOpenCount}</span> NFTs</span>
-              <span className="text-slate-700">·</span>
-              <span><span className="text-white font-semibold">{tokenOpenCount}</span> tokens</span>
-            </div>
-          )}
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Link href="/create" className="btn-primary shrink-0 text-sm !py-2 !px-4">
-            + List Asset
-          </Link>
-          <Link href="/request/create" className="btn-secondary shrink-0 text-sm">
-            + Request Asset
-          </Link>
-        </div>
+      <div className="pt-2">
+        <AssetNav />
+        {!loading && offers.length > 0 && (
+          <div className="flex items-center gap-3 mt-1.5 text-xs text-slate-500">
+            <span><span className="text-white font-semibold">{openOffers.length}</span> open</span>
+            <span className="text-slate-700">·</span>
+            <span><span className="text-white font-semibold">{nftOpenCount}</span> NFTs</span>
+            <span className="text-slate-700">·</span>
+            <span><span className="text-white font-semibold">{tokenOpenCount}</span> tokens</span>
+          </div>
+        )}
       </div>
 
       {/* Controls — sticky */}

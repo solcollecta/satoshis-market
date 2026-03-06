@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import Link from 'next/link';
 import { CONTRACT_ADDRESS } from '@/lib/opnet';
 import Image from 'next/image';
 
@@ -58,19 +57,6 @@ export default function HomePage() {
             <Image src="/opnet-logo.svg" alt="OPNet" width={56} height={21} className="animate-opnet-glow" />
           </span>
         </p>
-      </div>
-
-      {/* CTAs */}
-      <div className="flex flex-wrap items-center justify-center gap-4">
-        <Link href="/create" className="btn-secondary px-10 py-3.5 text-lg">
-          List Assets
-        </Link>
-        <Link href="/assets" className="btn-secondary px-10 py-3.5 text-lg">
-          Trade Assets
-        </Link>
-        <Link href="/request/create" className="btn-secondary px-10 py-3.5 text-lg">
-          Request Assets
-        </Link>
       </div>
 
       {/* Contract address */}
