@@ -21,16 +21,19 @@ import {
 import type { Offer } from '@/types/offer';
 import type { BuyRequest } from '@/lib/requestsDb';
 import { OfferCard } from '@/components/OfferCard';
+import { OfferCardRow } from '@/components/OfferCardRow';
 import { RequestCard } from '@/components/RequestCard';
 import { AssetNav } from '@/components/AssetNav';
 import { StatusDropdown } from '@/components/StatusDropdown';
+import { ViewToggle } from '@/components/ViewToggle';
 import { useWallet } from '@/context/WalletContext';
 import { getAllListingTimestamps } from '@/lib/tokens';
 
 type Filter    = 'all' | 'nft' | 'token';
 type Sort      = 'price_asc' | 'price_desc' | 'id_desc';
 type StatusKey = 'sold' | 'cancelled' | 'private';
-type ViewMode  = 'listings' | 'requests';
+type ViewModeMarket  = 'listings' | 'requests';
+type GridMode  = 'grid' | 'large' | 'list';
 
 const STATUS_OPTIONS: { key: StatusKey; label: string }[] = [
   { key: 'sold',      label: 'Sold'      },
@@ -60,11 +63,12 @@ function AssetsPage() {
   const [mineOnly, setMineOnly] = useState(false);
   const [myOpnetAddr, setMyOpnetAddr] = useState<string | null>(null);
   const [timestamps, setTimestamps] = useState<Record<string, number>>({});
-  const [viewMode, setViewMode]   = useState<ViewMode>(() => searchParams.get('view') === 'requests' ? 'requests' : 'listings');
+  const [viewMode, setViewMode]   = useState<ViewModeMarket>(() => searchParams.get('view') === 'requests' ? 'requests' : 'listings');
   const [requests, setRequests]   = useState<BuyRequest[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(false);
   const [privateToMe, setPrivateToMe] = useState(() => searchParams.get('privateToMe') === '1');
   const [nameCache, setNameCache] = useState<Map<string, string>>(new Map());
+  const [gridMode, setGridMode]   = useState<GridMode>('grid');
 
   const toggleStatus = (key: StatusKey) => {
     setStatusFilters(prev => {
@@ -161,14 +165,11 @@ function AssetsPage() {
 
     // ── Base visibility filter ────────────────────────────────────────────
     if (privateToMe && address) {
-      // "Private to me": show only listings restricted to my address.
-      // Sort, search, asset type, and status filters still apply after this.
       let takerBigint: bigint | null = null;
       try { takerBigint = hexToBigint(normalizeToHex32(address)); } catch { /* skip */ }
       if (takerBigint && takerBigint !== 0n) {
         const tk = takerBigint;
         list = list.filter(o => o.allowedTaker !== 0n && o.allowedTaker === tk);
-        // Within private-to-me: open always shown; sold/cancelled opt-in via status filter
         list = list.filter(o => {
           if (o.status === 1) return true;
           if (statusFilters.has('sold')      && o.status === 2) return true;
@@ -179,14 +180,11 @@ function AssetsPage() {
         list = [];
       }
     } else {
-      // Standard visibility: open public is always the base.
-      // Sold / Cancelled / Private are additive opt-in via status filter.
-      // Own open private listings are always shown when "Own Listings" is active.
       const myNorm = mineOnly && myOpnetAddr ? myOpnetAddr.toLowerCase() : null;
       list = list.filter(o => {
-        if (o.status === 1 && o.allowedTaker === 0n) return true;                             // open public: always
+        if (o.status === 1 && o.allowedTaker === 0n) return true;
         if (myNorm && o.status === 1 && o.allowedTaker !== 0n
-            && o.maker.toLowerCase() === myNorm)        return true;                          // own private open: always when mineOnly
+            && o.maker.toLowerCase() === myNorm)        return true;
         if (statusFilters.has('sold')      && o.status === 2)                   return true;
         if (statusFilters.has('cancelled') && o.status === 3)                   return true;
         if (statusFilters.has('private')   && o.allowedTaker !== 0n && o.status === 1) return true;
@@ -217,9 +215,7 @@ function AssetsPage() {
           list = list.filter(o => keyToHex(o.btcRecipientKey).toLowerCase() === norm);
         } else {
           list = list.filter(o => {
-            // Match contract address
             if (o.token.toLowerCase().includes(q)) return true;
-            // Match token symbol or collection name
             const sym = nameCache.get(o.token)?.toLowerCase();
             if (sym && sym.includes(q)) return true;
             const name = nameCache.get(o.token + ':name')?.toLowerCase();
@@ -253,8 +249,25 @@ function AssetsPage() {
 
   const pillGroup = 'flex items-center gap-1 bg-surface border border-surface-border rounded-lg p-1 shrink-0';
 
+  // ── Grid class based on view mode ────────────────────────────────────────
+  const gridClass =
+    gridMode === 'large' ? 'grid gap-5 grid-cols-1 sm:grid-cols-2' :
+    gridMode === 'list'  ? 'flex flex-col gap-2' :
+                           'grid gap-4 sm:grid-cols-2 lg:grid-cols-3';
+
+  const skeletonClass =
+    gridMode === 'large' ? 'skeleton h-72 rounded-2xl' :
+    gridMode === 'list'  ? 'skeleton h-16 rounded-xl' :
+                           'skeleton h-52 rounded-2xl';
+
+  const skeletonCount = gridMode === 'list' ? 12 : gridMode === 'large' ? 6 : 9;
+
+  const isLoading = loading || (viewMode === 'requests' && requestsLoading);
+  const resultCount = viewMode === 'listings' ? displayed.length : displayedRequests.length;
+  const totalCount  = viewMode === 'listings' ? offers.length : requests.length;
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
 
       {/* Header */}
       <div className="flex items-start justify-between gap-4 pt-2 flex-wrap">
@@ -271,106 +284,124 @@ function AssetsPage() {
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Link href="/create" className="btn-secondary shrink-0 text-sm">
+          <Link href="/create" className="btn-primary shrink-0 text-sm !py-2 !px-4">
             + List Asset
           </Link>
           <Link href="/request/create" className="btn-secondary shrink-0 text-sm">
-            + Request Asset
+            + Request
           </Link>
         </div>
       </div>
 
-      {/* Controls */}
-      <div className="card p-3 space-y-3">
+      {/* Controls — sticky */}
+      <div className="sticky top-16 z-30 -mx-4 px-4 py-3 bg-surface/90 backdrop-blur-xl border-b border-surface-border/40">
+        <div className="space-y-3">
 
-        {/* Row 1: Filter pills */}
-        <div className="flex items-center gap-2 flex-wrap">
+          {/* Row 1: Filter pills + View toggle */}
+          <div className="flex items-center gap-2 flex-wrap">
 
-          {/* Level 1 — Asset type */}
-          <div className={pillGroup}>
-            {(['all', 'nft', 'token'] as Filter[]).map(f => (
-              <button key={f} onClick={() => setFilter(f)} className={pill(filter === f)}>
-                {f === 'all' ? 'All' : f === 'nft' ? 'OP-721 NFTs' : 'OP-20 Tokens'}
-              </button>
-            ))}
-          </div>
-
-          {/* Level 2 — Market type */}
-          <div className={pillGroup}>
-            {(['listings', 'requests'] as ViewMode[]).map(vm => (
-              <button key={vm} onClick={() => setViewMode(vm)} className={pill(viewMode === vm)}>
-                {vm === 'listings' ? 'Listings' : 'Requests'}
-              </button>
-            ))}
-          </div>
-
-          {/* Level 3 — User filter (Listings only) */}
-          {viewMode === 'listings' && (
+            {/* Asset type */}
             <div className={pillGroup}>
-              <button
-                onClick={() => { setMineOnly(false); setPrivateToMe(false); }}
-                className={pill(!mineOnly && !privateToMe)}
-              >
-                All
-              </button>
-              <button
-                onClick={() => address && setMineOnly(v => !v)}
-                title={!address ? 'Connect your wallet first' : undefined}
-                className={pill(mineOnly, !address)}
-              >
-                Own Listings
-              </button>
-              {address && (
-                <button
-                  onClick={() => setPrivateToMe(v => !v)}
-                  className={`px-3 py-1 rounded-md text-xs font-semibold transition-all duration-150 flex items-center gap-1 ${
-                    privateToMe
-                      ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm'
-                      : 'text-slate-500 hover:text-white'
-                  }`}
-                >
-                  🔒 Private to me
+              {(['all', 'nft', 'token'] as Filter[]).map(f => (
+                <button key={f} onClick={() => setFilter(f)} className={pill(filter === f)}>
+                  {f === 'all' ? 'All' : f === 'nft' ? 'OP-721 NFTs' : 'OP-20 Tokens'}
                 </button>
-              )}
+              ))}
             </div>
-          )}
 
-          {/* Status dropdown (Listings only) */}
-          {viewMode === 'listings' && (
-            <StatusDropdown
-              options={STATUS_OPTIONS}
-              selected={statusFilters as Set<string>}
-              onToggle={k => toggleStatus(k as StatusKey)}
+            {/* Market type */}
+            <div className={pillGroup}>
+              {(['listings', 'requests'] as ViewModeMarket[]).map(vm => (
+                <button key={vm} onClick={() => setViewMode(vm)} className={pill(viewMode === vm)}>
+                  {vm === 'listings' ? 'Listings' : 'Requests'}
+                </button>
+              ))}
+            </div>
+
+            {/* User filter (Listings only) */}
+            {viewMode === 'listings' && (
+              <div className={pillGroup}>
+                <button
+                  onClick={() => { setMineOnly(false); setPrivateToMe(false); }}
+                  className={pill(!mineOnly && !privateToMe)}
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => address && setMineOnly(v => !v)}
+                  title={!address ? 'Connect your wallet first' : undefined}
+                  className={pill(mineOnly, !address)}
+                >
+                  Own Listings
+                </button>
+                {address && (
+                  <button
+                    onClick={() => setPrivateToMe(v => !v)}
+                    className={`px-3 py-1 rounded-md text-xs font-semibold transition-all duration-150 flex items-center gap-1 ${
+                      privateToMe
+                        ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm'
+                        : 'text-slate-500 hover:text-white'
+                    }`}
+                  >
+                    Private to me
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Status dropdown (Listings only) */}
+            {viewMode === 'listings' && (
+              <StatusDropdown
+                options={STATUS_OPTIONS}
+                selected={statusFilters as Set<string>}
+                onToggle={k => toggleStatus(k as StatusKey)}
+              />
+            )}
+
+            {/* Spacer */}
+            <div className="flex-1" />
+
+            {/* View toggle */}
+            {viewMode === 'listings' && (
+              <ViewToggle value={gridMode} onChange={setGridMode} />
+            )}
+          </div>
+
+          {/* Row 2: Search + sort + refresh + result counter */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <input
+              type="search"
+              placeholder="Search by name, ID, seller address, or contract..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="flex-1 min-w-48 !rounded-lg !py-1.5 !text-sm"
             />
-          )}
+            <select
+              value={sort}
+              onChange={e => setSort(e.target.value as Sort)}
+              className="w-auto !rounded-lg !py-[7px] !text-sm shrink-0"
+            >
+              <option value="price_asc">Price: low → high</option>
+              <option value="price_desc">Price: high → low</option>
+              <option value="id_desc">Newest first</option>
+            </select>
+            <button
+              onClick={() => { void load(); if (viewMode === 'requests') void loadRequests(); }}
+              disabled={loading}
+              className="btn-secondary !rounded-lg !py-[7px] !text-sm shrink-0"
+            >
+              {loading ? '...' : 'Refresh'}
+            </button>
 
-        </div>
-
-        {/* Row 2: Search + sort + refresh */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <input
-            type="search"
-            placeholder="Search by name, ID, seller address, or contract…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="flex-1 min-w-48 !rounded-lg !py-1.5 !text-sm"
-          />
-          <select
-            value={sort}
-            onChange={e => setSort(e.target.value as Sort)}
-            className="w-auto !rounded-lg !py-[7px] !text-sm shrink-0"
-          >
-            <option value="price_asc">Price: low → high</option>
-            <option value="price_desc">Price: high → low</option>
-            <option value="id_desc">Newest first</option>
-          </select>
-          <button
-            onClick={() => { void load(); if (viewMode === 'requests') void loadRequests(); }}
-            disabled={loading}
-            className="btn-secondary !rounded-lg !py-[7px] !text-sm shrink-0"
-          >
-            {loading ? '…' : 'Refresh'}
-          </button>
+            {/* Result counter */}
+            {!isLoading && totalCount > 0 && (
+              <span className="text-[11px] text-slate-600 shrink-0 tabular-nums">
+                {resultCount === totalCount
+                  ? `${resultCount} results`
+                  : `${resultCount} of ${totalCount}`}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -380,10 +411,10 @@ function AssetsPage() {
       )}
 
       {/* Loading skeleton */}
-      {(loading || (viewMode === 'requests' && requestsLoading)) && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 9 }).map((_, i) => (
-            <div key={i} className="skeleton h-52 rounded-2xl" />
+      {isLoading && (
+        <div className={gridClass}>
+          {Array.from({ length: skeletonCount }).map((_, i) => (
+            <div key={i} className={skeletonClass} />
           ))}
         </div>
       )}
@@ -407,28 +438,31 @@ function AssetsPage() {
               </button>
             </div>
           ) : (
-            <div className="card text-center py-20 text-slate-600">
-              <span className="text-5xl mb-4 block opacity-20">🛒</span>
-              <p className="font-semibold text-slate-400">No open buy requests</p>
-              <p className="text-sm mt-2">
-                <Link href="/request/create" className="text-brand hover:underline">
-                  Post the first request →
-                </Link>
-              </p>
-            </div>
+            <EmptyState
+              icon={<CartIcon />}
+              title="No open buy requests"
+              action={{ label: 'Post the first request', href: '/request/create' }}
+            />
           )}
         </>
       )}
 
-      {/* Listings grid */}
-      {viewMode === 'listings' && !loading && displayed.length > 0 && (
-        <>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {displayed.map(o => (
-              <OfferCard key={o.id.toString()} offer={o} createdAt={timestamps[o.id.toString()]} />
-            ))}
-          </div>
-        </>
+      {/* Listings — Grid or Large */}
+      {viewMode === 'listings' && !loading && displayed.length > 0 && gridMode !== 'list' && (
+        <div className={gridClass}>
+          {displayed.map(o => (
+            <OfferCard key={o.id.toString()} offer={o} createdAt={timestamps[o.id.toString()]} />
+          ))}
+        </div>
+      )}
+
+      {/* Listings — List view */}
+      {viewMode === 'listings' && !loading && displayed.length > 0 && gridMode === 'list' && (
+        <div className={gridClass}>
+          {displayed.map(o => (
+            <OfferCardRow key={o.id.toString()} offer={o} createdAt={timestamps[o.id.toString()]} />
+          ))}
+        </div>
       )}
 
       {/* No results (listings mode) */}
@@ -447,17 +481,52 @@ function AssetsPage() {
 
       {/* Empty state (listings mode) */}
       {viewMode === 'listings' && !loading && offers.length === 0 && !error && (
-        <div className="card text-center py-20 text-slate-600">
-          <span className="text-5xl mb-4 block opacity-20">📦</span>
-          <p className="font-semibold text-slate-400">No listings yet</p>
-          <p className="text-sm mt-2">
-            <Link href="/create" className="text-brand hover:underline">
-              Create the first listing →
-            </Link>
-          </p>
-        </div>
+        <EmptyState
+          icon={<BoxIcon />}
+          title="No listings yet"
+          action={{ label: 'Create the first listing', href: '/create' }}
+        />
       )}
 
     </div>
+  );
+}
+
+// ── Empty state component ─────────────────────────────────────────────────────
+
+function EmptyState({ icon, title, action }: {
+  icon: JSX.Element;
+  title: string;
+  action: { label: string; href: string };
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center py-20 text-center">
+      <div className="w-16 h-16 rounded-2xl bg-surface-card border border-surface-border flex items-center justify-center mb-4 text-slate-700">
+        {icon}
+      </div>
+      <p className="font-semibold text-slate-400">{title}</p>
+      <p className="text-sm mt-2">
+        <Link href={action.href} className="text-brand hover:underline">
+          {action.label} →
+        </Link>
+      </p>
+    </div>
+  );
+}
+
+function CartIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-7 h-7">
+      <path d="M2.25 2.25a.75.75 0 000 1.5h1.386c.17 0 .318.114.362.278l2.558 9.592a3.752 3.752 0 00-2.806 3.63c0 .414.336.75.75.75h15.75a.75.75 0 000-1.5H5.378A2.25 2.25 0 017.5 15h11.218a.75.75 0 00.674-.421 60.358 60.358 0 002.96-7.228.75.75 0 00-.525-.965A60.864 60.864 0 005.68 4.509l-.232-.867A1.875 1.875 0 003.636 2.25H2.25zM3.75 20.25a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0zM16.5 20.25a1.5 1.5 0 113 0 1.5 1.5 0 01-3 0z" />
+    </svg>
+  );
+}
+
+function BoxIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-7 h-7">
+      <path d="M3.375 3C2.339 3 1.5 3.84 1.5 4.875v.75c0 1.036.84 1.875 1.875 1.875h17.25c1.035 0 1.875-.84 1.875-1.875v-.75C22.5 3.839 21.66 3 20.625 3H3.375z" />
+      <path fillRule="evenodd" d="M3.087 9l.54 9.176A3 3 0 006.62 21h10.757a3 3 0 002.995-2.824L20.913 9H3.087zm6.163 3.75A.75.75 0 0110 12h4a.75.75 0 010 1.5h-4a.75.75 0 01-.75-.75z" clipRule="evenodd" />
+    </svg>
   );
 }

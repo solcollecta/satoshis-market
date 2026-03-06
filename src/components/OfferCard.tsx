@@ -122,7 +122,7 @@ export function OfferCard({ offer, createdAt }: Props) {
     <>
     {buyOpen && <QuickBuyModal offer={offer} onClose={() => setBuyOpen(false)} />}
     <div
-      className="flex flex-col bg-surface-card border border-surface-border rounded-2xl overflow-hidden transition-colors duration-200 hover:border-surface-bright cursor-pointer"
+      className="flex flex-col bg-surface-card border border-surface-border rounded-2xl overflow-hidden transition-all duration-200 hover:border-surface-bright hover:shadow-[0_8px_30px_rgba(0,0,0,0.3),0_0_1px_rgba(247,147,26,0.1)] hover:-translate-y-0.5 cursor-pointer"
       onClick={(e) => {
         if ((e.target as HTMLElement).closest('button, a')) return;
         router.push(`/listing/${offer.id.toString()}`);
