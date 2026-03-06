@@ -755,77 +755,7 @@ function CreateOfferPage() {
             )}
           </div>
 
-          {/* Share fees toggle — only interactive once a price is entered */}
-          {(() => {
-            const canToggle = btcSatsRaw > 0n && !sharedFeesLocked;
-            const isDisabled = btcSatsRaw === 0n && !sharedFeesLocked;
-            return (
-              <div
-                className={`rounded-xl border p-4 transition-colors duration-200 ${
-                  sharedFees
-                    ? 'border-emerald-600/40 bg-emerald-900/10'
-                    : 'border-surface-border bg-surface/40'
-                }`}
-              >
-                <label className={`flex items-center gap-2 mb-2${canToggle ? ' cursor-pointer' : ''}`}>
-                  <input
-                    type="checkbox"
-                    checked={sharedFees}
-                    onChange={(e) => canToggle && setSharedFees(e.target.checked)}
-                    disabled={isDisabled || sharedFeesLocked}
-                    className={`w-4 h-4 rounded accent-emerald-500${isDisabled ? ' opacity-40' : ''}`}
-                  />
-                  <span className={`text-sm font-semibold${isDisabled ? ' text-slate-500' : ' text-slate-200'}`}>
-                    Split fees
-                  </span>
-                  {isDisabled && (
-                    <span className="text-[10px] text-slate-300 font-normal">enter a BTC price first</span>
-                  )}
-                  {sharedFeesLocked && (
-                    <span className="ml-1 text-[10px] font-bold text-amber-400 border border-amber-700/40 bg-amber-900/20 px-2 py-0.5 rounded-full">
-                      from request
-                    </span>
-                  )}
-                </label>
-                <p className="text-xs text-slate-500 mb-3">
-                  Adjusts the listing price so both parties share the platform fee.
-                </p>
-
-                {/* Breakdown panel — only when price is entered and toggle is on */}
-                {sharedFees && sharedFeesInfo && (
-                  <div className="mt-3 pt-3 border-t border-emerald-800/30 space-y-1.5 text-xs">
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Your desired price</span>
-                      <span className="text-slate-300 font-mono">{formatBtcFromSats(sharedFeesInfo.originalSats)} BTC</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Adjusted listing price</span>
-                      <span className="text-white font-mono font-semibold">{formatBtcFromSats(sharedFeesInfo.adjustedSats)} BTC</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Fee on adjusted price</span>
-                      <span className="text-slate-300 font-mono">{formatBtcFromSats(sharedFeesInfo.adjustedFee)} BTC</span>
-                    </div>
-                    <div className="border-t border-emerald-800/20 pt-1.5 mt-1.5" />
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Your share</span>
-                      <span className="text-emerald-400 font-mono">-{formatBtcFromSats(sharedFeesInfo.sellerCost)} BTC</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Buyer&apos;s share</span>
-                      <span className="text-emerald-400 font-mono">-{formatBtcFromSats(sharedFeesInfo.buyerCost)} BTC</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Buyer pays total</span>
-                      <span className="text-white font-mono font-semibold">{formatBtcFromSats(sharedFeesInfo.buyerTotal)} BTC</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-
-          {/* Private buyer */}
+          {/* Private OTC */}
           <div className={`rounded-xl border p-4 transition-colors duration-200 ${
             allowedTaker || privateBuyerLocked
               ? 'border-sky-600/40 bg-sky-900/10'
@@ -834,7 +764,7 @@ function CreateOfferPage() {
             <label htmlFor="allowed-taker" className="flex items-center gap-2 mb-2">
               <span className="text-sky-400 text-sm">🔒</span>
               <span className="text-sm font-semibold text-slate-200">
-                Private buyer
+                Private OTC
               </span>
               <span className="text-[10px] text-slate-500 font-normal">optional</span>
               {privateBuyerLocked && (
@@ -864,6 +794,79 @@ function CreateOfferPage() {
                 That wallet will see a notification when they connect.
               </p>
             ) : null}
+
+            {/* Split fees — always visible, dynamic hints */}
+            {(() => {
+              const hasBuyer = !!(allowedTaker || sharedFeesLocked);
+              const hasPrice = btcSatsRaw > 0n;
+              const canToggle = hasBuyer && hasPrice && !sharedFeesLocked;
+              const hint = !hasBuyer ? 'enter buyer wallet first' : !hasPrice ? 'enter a BTC price first' : null;
+              return (
+                <div className="mt-4 pt-4 border-t border-sky-800/30">
+                  <label className={`flex items-center gap-2 mb-2${canToggle ? ' cursor-pointer' : ''}`}>
+                    <input
+                      type="checkbox"
+                      checked={sharedFees}
+                      onChange={(e) => canToggle && setSharedFees(e.target.checked)}
+                      disabled={!canToggle && !sharedFeesLocked}
+                      className={`w-4 h-4 rounded accent-emerald-500${!canToggle && !sharedFeesLocked ? ' opacity-40' : ''}`}
+                    />
+                    <span className={`text-sm font-semibold${!canToggle && !sharedFeesLocked ? ' text-slate-500' : ' text-slate-200'}`}>
+                      Split fees
+                    </span>
+                    {hint && (
+                      <span className="text-[10px] text-slate-300 font-normal">{hint}</span>
+                    )}
+                    {sharedFeesLocked && (
+                      <span className="ml-1 text-[10px] font-bold text-amber-400 border border-amber-700/40 bg-amber-900/20 px-2 py-0.5 rounded-full">
+                        from request
+                      </span>
+                    )}
+                  </label>
+                  <p className="text-xs text-slate-500">
+                    Adjusts the listing price so both parties share the platform fee.
+                  </p>
+
+                  {sharedFees && (
+                    <div className="mt-2 rounded-lg border border-sky-800/30 bg-sky-900/10 px-3 py-2">
+                      <p className="text-[11px] text-sky-300/80 leading-relaxed">
+                        The price is recalculated so both parties cover half the fee. This is the only fee-sharing method that keeps settlement fully trustless.
+                      </p>
+                    </div>
+                  )}
+
+                  {sharedFees && sharedFeesInfo && (
+                    <div className="mt-3 pt-3 border-t border-emerald-800/30 space-y-1.5 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Your desired price</span>
+                        <span className="text-slate-300 font-mono">{formatBtcFromSats(sharedFeesInfo.originalSats)} BTC</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Adjusted listing price</span>
+                        <span className="text-white font-mono font-semibold">{formatBtcFromSats(sharedFeesInfo.adjustedSats)} BTC</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Fee on adjusted price</span>
+                        <span className="text-slate-300 font-mono">{formatBtcFromSats(sharedFeesInfo.adjustedFee)} BTC</span>
+                      </div>
+                      <div className="border-t border-emerald-800/20 pt-1.5 mt-1.5" />
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Your share</span>
+                        <span className="text-emerald-400 font-mono">-{formatBtcFromSats(sharedFeesInfo.sellerCost)} BTC</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Buyer&apos;s share</span>
+                        <span className="text-emerald-400 font-mono">-{formatBtcFromSats(sharedFeesInfo.buyerCost)} BTC</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Buyer pays total</span>
+                        <span className="text-white font-mono font-semibold">{formatBtcFromSats(sharedFeesInfo.buyerTotal)} BTC</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Validation error (pre-tx) */}

@@ -5,9 +5,12 @@ import { useRouter } from 'next/navigation';
 import { useWallet } from '@/context/WalletContext';
 import { fetchTokenInfo } from '@/lib/opnet';
 import { parseBtcToSats, parseUnits } from '@/lib/tokens';
+import { formatBtcFromSats } from '@/lib/opnet';
 
 type Mode     = 'op20' | 'op721';
 type NftScope = 'specific' | 'any';
+
+const PLATFORM_FEE_BPS = 50;
 
 export default function RequestCreatePage() {
   const router = useRouter();
@@ -47,6 +50,24 @@ export default function RequestCreatePage() {
   })();
   const btcSatsRaw = (() => {
     try { return parseBtcToSats(btcValue); } catch { return 0n; }
+  })();
+
+  // ── Shared fees calculation ──────────────────────────────────────────────
+  const sharedFeesInfo = (() => {
+    if (!sharedFees || btcSatsRaw === 0n) return null;
+    const halfRate = BigInt(Math.floor(PLATFORM_FEE_BPS / 2));
+    const adjustedSats = btcSatsRaw * (10_000n - halfRate) / 10_000n;
+    const adjustedFee = adjustedSats * BigInt(PLATFORM_FEE_BPS) / 10_000n;
+    const sellerCost = btcSatsRaw - adjustedSats;
+    const buyerCost = adjustedSats + adjustedFee - btcSatsRaw;
+    return {
+      originalSats: btcSatsRaw,
+      adjustedSats,
+      adjustedFee,
+      sellerCost,
+      buyerCost,
+      buyerTotal: adjustedSats + adjustedFee,
+    };
   })();
 
   // ── Validation ────────────────────────────────────────────────────────────
@@ -288,6 +309,44 @@ export default function RequestCreatePage() {
             <p className="text-xs text-slate-500 mb-3">
               Adjusts the listing price so both parties share the platform fee.
             </p>
+
+            {sharedFees && (
+              <div className="mt-2 rounded-lg border border-sky-800/30 bg-sky-900/10 px-3 py-2">
+                <p className="text-[11px] text-sky-300/80 leading-relaxed">
+                  The price is recalculated so both parties cover half the fee. This is the only fee-sharing method that keeps settlement fully trustless.
+                </p>
+              </div>
+            )}
+
+            {sharedFees && sharedFeesInfo && (
+              <div className="mt-3 pt-3 border-t border-emerald-800/30 space-y-1.5 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Your offered price</span>
+                  <span className="text-slate-300 font-mono">{formatBtcFromSats(sharedFeesInfo.originalSats)} BTC</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Adjusted listing price</span>
+                  <span className="text-white font-mono font-semibold">{formatBtcFromSats(sharedFeesInfo.adjustedSats)} BTC</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Fee on adjusted price</span>
+                  <span className="text-slate-300 font-mono">{formatBtcFromSats(sharedFeesInfo.adjustedFee)} BTC</span>
+                </div>
+                <div className="border-t border-emerald-800/20 pt-1.5 mt-1.5" />
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Seller&apos;s share</span>
+                  <span className="text-emerald-400 font-mono">-{formatBtcFromSats(sharedFeesInfo.sellerCost)} BTC</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Your share</span>
+                  <span className="text-emerald-400 font-mono">-{formatBtcFromSats(sharedFeesInfo.buyerCost)} BTC</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">You pay total</span>
+                  <span className="text-white font-mono font-semibold">{formatBtcFromSats(sharedFeesInfo.buyerTotal)} BTC</span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Validation error */}
