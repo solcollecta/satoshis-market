@@ -82,11 +82,13 @@ export function Navbar() {
         <div className="flex-1" />
 
         {/* BTC price + Pending transactions + Wallet */}
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-2.5 shrink-0">
           <BtcPrice />
-          <PendingTxsIndicator />
-          <PrivateListingsIndicator />
-          <SalesIndicator />
+          <div className="flex items-center gap-2">
+            <PendingTxsIndicator />
+            <PrivateListingsIndicator />
+            <SalesIndicator />
+          </div>
           <WalletBar />
         </div>
 

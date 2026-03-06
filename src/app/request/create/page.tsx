@@ -117,9 +117,6 @@ export default function RequestCreatePage() {
             </a>
           </div>
           <h1 className="text-2xl font-bold text-white">Request Asset</h1>
-          <p className="text-sm text-slate-400 mt-1">
-            Post a buy request. No transaction is executed — a seller creates a private listing for you.
-          </p>
         </div>
 
         {/* Disclaimer */}
@@ -271,29 +268,26 @@ export default function RequestCreatePage() {
 
           {/* Share fees toggle */}
           <div
-            className={`rounded-xl border p-4 transition-colors duration-200 cursor-pointer ${
+            className={`rounded-xl border p-4 transition-colors duration-200 ${
               sharedFees
                 ? 'border-emerald-600/40 bg-emerald-900/10'
                 : 'border-surface-border bg-surface/40'
             }`}
-            onClick={() => setSharedFees(!sharedFees)}
           >
-            <label className="flex items-center gap-3 cursor-pointer">
+            <label className="flex items-center gap-2 mb-2 cursor-pointer">
               <input
                 type="checkbox"
                 checked={sharedFees}
                 onChange={(e) => setSharedFees(e.target.checked)}
                 className="w-4 h-4 rounded accent-emerald-500"
               />
-              <div>
-                <p className="text-sm font-semibold text-slate-200">
-                  Share platform fees 50/50
-                </p>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Seller adjusts listing price so both sides split the fee equally.
-                </p>
-              </div>
+              <span className="text-sm font-semibold text-slate-200">
+                Split fees
+              </span>
             </label>
+            <p className="text-xs text-slate-500 mb-3">
+              Adjusts the listing price so both parties share the platform fee.
+            </p>
           </div>
 
           {/* Validation error */}

@@ -765,31 +765,31 @@ function CreateOfferPage() {
                   sharedFees
                     ? 'border-emerald-600/40 bg-emerald-900/10'
                     : 'border-surface-border bg-surface/40'
-                }${isDisabled ? ' opacity-40' : ''}${canToggle ? ' cursor-pointer' : ''}`}
-                onClick={() => canToggle && setSharedFees(!sharedFees)}
+                }`}
               >
-                <label className={`flex items-center gap-3${canToggle ? ' cursor-pointer' : ''}`}>
+                <label className={`flex items-center gap-2 mb-2${canToggle ? ' cursor-pointer' : ''}`}>
                   <input
                     type="checkbox"
                     checked={sharedFees}
                     onChange={(e) => canToggle && setSharedFees(e.target.checked)}
                     disabled={isDisabled || sharedFeesLocked}
-                    className="w-4 h-4 rounded accent-emerald-500"
+                    className={`w-4 h-4 rounded accent-emerald-500${isDisabled ? ' opacity-40' : ''}`}
                   />
-                  <div>
-                    <span className="text-sm font-semibold text-slate-200">
-                      Share fees 50/50 with buyer
+                  <span className={`text-sm font-semibold${isDisabled ? ' text-slate-500' : ' text-slate-200'}`}>
+                    Split fees
+                  </span>
+                  {isDisabled && (
+                    <span className="text-[10px] text-slate-300 font-normal">enter a BTC price first</span>
+                  )}
+                  {sharedFeesLocked && (
+                    <span className="ml-1 text-[10px] font-bold text-amber-400 border border-amber-700/40 bg-amber-900/20 px-2 py-0.5 rounded-full">
+                      from request
                     </span>
-                    {sharedFeesLocked && (
-                      <span className="ml-2 text-[10px] font-bold text-amber-400 border border-amber-700/40 bg-amber-900/20 px-2 py-0.5 rounded-full">
-                        from request
-                      </span>
-                    )}
-                    {isDisabled && (
-                      <p className="text-xs text-slate-600 mt-0.5">Enter a BTC price first</p>
-                    )}
-                  </div>
+                  )}
                 </label>
+                <p className="text-xs text-slate-500 mb-3">
+                  Adjusts the listing price so both parties share the platform fee.
+                </p>
 
                 {/* Breakdown panel — only when price is entered and toggle is on */}
                 {sharedFees && sharedFeesInfo && (
