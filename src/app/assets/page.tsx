@@ -198,6 +198,9 @@ function AssetsPage() {
     if (mineOnly && myOpnetAddr) {
       const norm = myOpnetAddr.toLowerCase();
       list = list.filter(o => o.maker.toLowerCase() === norm);
+    } else if (myOpnetAddr) {
+      const norm = myOpnetAddr.toLowerCase();
+      list = list.filter(o => o.maker.toLowerCase() !== norm);
     }
 
     if (sort === 'price_asc')  list = [...list].sort((a, b) => a.btcSatoshis < b.btcSatoshis ? -1 : 1);
