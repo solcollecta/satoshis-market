@@ -261,8 +261,6 @@ function AssetsPage() {
   const skeletonCount = gridMode === 'list' ? 12 : 9;
 
   const isLoading = loading || (viewMode === 'requests' && requestsLoading);
-  const resultCount = viewMode === 'listings' ? displayed.length : displayedRequests.length;
-  const totalCount  = viewMode === 'listings' ? offers.length : requests.length;
 
   return (
     <div className="space-y-6">
@@ -286,7 +284,7 @@ function AssetsPage() {
             + List Asset
           </Link>
           <Link href="/request/create" className="btn-secondary shrink-0 text-sm">
-            + Request
+            + Request Asset
           </Link>
         </div>
       </div>
@@ -359,13 +357,22 @@ function AssetsPage() {
             {/* Spacer */}
             <div className="flex-1" />
 
-            {/* View toggle */}
-            {viewMode === 'listings' && (
-              <ViewToggle value={gridMode} onChange={setGridMode} />
-            )}
+            {/* View toggle + Refresh */}
+            <div className="flex items-center gap-2 shrink-0">
+              {viewMode === 'listings' && (
+                <ViewToggle value={gridMode} onChange={setGridMode} />
+              )}
+              <button
+                onClick={() => { void load(); if (viewMode === 'requests') void loadRequests(); }}
+                disabled={loading}
+                className="btn-secondary !rounded-lg !py-[7px] !text-sm shrink-0"
+              >
+                {loading ? '...' : 'Refresh'}
+              </button>
+            </div>
           </div>
 
-          {/* Row 2: Search + sort + refresh + result counter */}
+          {/* Row 2: Search + sort */}
           <div className="flex items-center gap-2 flex-wrap">
             <input
               type="search"
@@ -383,22 +390,6 @@ function AssetsPage() {
               <option value="price_desc">Price: high → low</option>
               <option value="id_desc">Newest first</option>
             </select>
-            <button
-              onClick={() => { void load(); if (viewMode === 'requests') void loadRequests(); }}
-              disabled={loading}
-              className="btn-secondary !rounded-lg !py-[7px] !text-sm shrink-0"
-            >
-              {loading ? '...' : 'Refresh'}
-            </button>
-
-            {/* Result counter */}
-            {!isLoading && totalCount > 0 && (
-              <span className="text-[11px] text-slate-600 shrink-0 tabular-nums">
-                {resultCount === totalCount
-                  ? `${resultCount} results`
-                  : `${resultCount} of ${totalCount}`}
-              </span>
-            )}
           </div>
         </div>
       </div>
