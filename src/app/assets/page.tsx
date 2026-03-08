@@ -43,8 +43,8 @@ const STATUS_OPTIONS: { key: StatusKey; label: string }[] = [
 ];
 
 const SORT_OPTIONS: { key: string; label: string }[] = [
-  { key: 'id_desc',    label: 'Latest'            },
-  { key: 'id_asc',     label: 'Oldest'            },
+  { key: 'id_desc',    label: 'New'            },
+  { key: 'id_asc',     label: 'Old'            },
   { key: 'price_asc',  label: 'Price: low → high' },
   { key: 'price_desc', label: 'Price: high → low' },
 ];
