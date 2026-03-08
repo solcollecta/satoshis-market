@@ -224,7 +224,37 @@ export async function getOffer(offerId: bigint): Promise<Offer | null> {
     status: status as OfferStatusCode,
     feeBps: Number(p.feeBps),
     allowedTaker: BigInt(String(p.allowedTaker ?? 0)),
+    expiryBlock: BigInt(String(p.expiryBlock ?? 0)),
   };
+}
+
+/**
+ * Fetch the current block height from the OPNet node.
+ * Used to calculate time remaining on listings with expiryBlock.
+ */
+export async function fetchCurrentBlock(): Promise<bigint> {
+  const provider = getProvider();
+  return provider.getBlockNumber();
+}
+
+/**
+ * Convert a block delta to a human-readable time string.
+ * Assumes ~10 minutes per Bitcoin block.
+ */
+export function blocksToTimeStr(blocks: bigint): string {
+  if (blocks <= 0n) return 'Expired';
+  const totalMinutes = Number(blocks) * 10;
+  const hours = Math.floor(totalMinutes / 60);
+  const days = Math.floor(hours / 24);
+  if (days > 0) {
+    const remainingHours = hours % 24;
+    return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
+  }
+  if (hours > 0) {
+    const remainingMinutes = totalMinutes % 60;
+    return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+  }
+  return `${totalMinutes}m`;
 }
 
 /**

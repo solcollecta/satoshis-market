@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
   listOffers,
+  fetchCurrentBlock,
   getWalletOpnetAddressHex,
   p2trAddressToKeyHex,
   keyToHex,
@@ -77,6 +78,7 @@ function AssetsPage() {
   const [nameCache, setNameCache] = useState<Map<string, string>>(new Map());
   const [gridMode, setGridMode]   = useState<GridMode>('grid');
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
+  const [currentBlock, setCurrentBlock] = useState<bigint>(0n);
 
   const toggleStatus = (key: StatusKey) => {
     setStatusFilters(prev => {
@@ -96,13 +98,15 @@ function AssetsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [fetched, hiddenRes] = await Promise.all([
+      const [fetched, hiddenRes, block] = await Promise.all([
         listOffers(),
         fetch('/api/hidden-listings').then(r => r.json()).catch(() => []),
+        fetchCurrentBlock().catch(() => 0n),
       ]);
       setOffers(fetched);
       setTimestamps(getAllListingTimestamps());
       setHiddenIds(new Set(Array.isArray(hiddenRes) ? hiddenRes : []));
+      setCurrentBlock(block);
       dispatchOffersUpdated(fetched);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load');
@@ -220,6 +224,15 @@ function AssetsPage() {
       });
     }
 
+    // ── Expired listings: hide open listings past their expiryBlock ──────
+    if (currentBlock > 0n) {
+      list = list.filter(o => {
+        if (o.status !== 1) return true; // keep sold/cancelled regardless
+        if (o.expiryBlock === 0n) return true; // no expiry set
+        return currentBlock < o.expiryBlock; // still active
+      });
+    }
+
     if (filter === 'nft')   list = list.filter(o => o.isNFT);
     if (filter === 'token') list = list.filter(o => !o.isNFT);
 
@@ -259,7 +272,7 @@ function AssetsPage() {
     }
 
     return list;
-  }, [offers, filter, sort, search, statusFilters, mineOnly, myOpnetAddr, privateToMe, address, nameCache, hiddenIds]);
+  }, [offers, filter, sort, search, statusFilters, mineOnly, myOpnetAddr, privateToMe, address, nameCache, hiddenIds, currentBlock]);
 
   // ── Filtered requests (asset type only) ───────────────────────────────────
   const displayedRequests = useMemo(() => {
@@ -465,7 +478,7 @@ function AssetsPage() {
       {viewMode === 'listings' && !loading && displayed.length > 0 && gridMode !== 'list' && (
         <div className={gridClass}>
           {displayed.map(o => (
-            <OfferCard key={o.id.toString()} offer={o} createdAt={timestamps[o.id.toString()]} hidden={hiddenIds.has(o.id.toString())} />
+            <OfferCard key={o.id.toString()} offer={o} createdAt={timestamps[o.id.toString()]} hidden={hiddenIds.has(o.id.toString())} currentBlock={currentBlock} />
           ))}
         </div>
       )}
@@ -474,7 +487,7 @@ function AssetsPage() {
       {viewMode === 'listings' && !loading && displayed.length > 0 && gridMode === 'list' && (
         <div className={gridClass}>
           {displayed.map(o => (
-            <OfferCardRow key={o.id.toString()} offer={o} createdAt={timestamps[o.id.toString()]} hidden={hiddenIds.has(o.id.toString())} />
+            <OfferCardRow key={o.id.toString()} offer={o} createdAt={timestamps[o.id.toString()]} hidden={hiddenIds.has(o.id.toString())} currentBlock={currentBlock} />
           ))}
         </div>
       )}

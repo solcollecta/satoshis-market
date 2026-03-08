@@ -16,6 +16,7 @@ import {
   type NftCollectionInfo,
 } from '@/lib/opnet';
 import { TokenAvatar } from './TokenAvatar';
+import { blocksToTimeStr } from '@/lib/opnet';
 import { formatRelativeCompact, formatTokenCompact } from '@/lib/tokens';
 import { useWallet } from '@/context/WalletContext';
 
@@ -30,6 +31,7 @@ interface Props {
   offer: Offer;
   createdAt?: number;
   hidden?: boolean;
+  currentBlock?: bigint;
 }
 
 interface TokenMeta { symbol: string; decimals: number }
@@ -52,7 +54,7 @@ async function getTokenMeta(address: string): Promise<TokenMeta | null> {
   }
 }
 
-export function OfferCardRow({ offer, createdAt, hidden }: Props) {
+export function OfferCardRow({ offer, createdAt, hidden, currentBlock }: Props) {
   const router = useRouter();
   const { address } = useWallet();
   const statusClass = STATUS_STYLES[offer.status] ?? STATUS_STYLES[0];
@@ -171,6 +173,15 @@ export function OfferCardRow({ offer, createdAt, hidden }: Props) {
             </span>
           )}
         </div>
+
+        {/* Expiry timer */}
+        {offer.status === 1 && offer.expiryBlock > 0n && currentBlock && currentBlock > 0n && (
+          <span className="text-[10px] text-amber-500 font-semibold shrink-0 ml-2 hidden sm:inline">
+            {currentBlock < offer.expiryBlock
+              ? `${blocksToTimeStr(offer.expiryBlock - currentBlock)} left`
+              : 'Expired'}
+          </span>
+        )}
 
         {/* Time */}
         {createdAt != null && (

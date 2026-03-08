@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   listOffers,
+  fetchCurrentBlock,
   fetchNftCollectionInfo,
   fetchTokenInfo,
   formatBtcFromSats,
@@ -75,6 +76,7 @@ export default function CollectionPage() {
   const [requests, setRequests]   = useState<BuyRequest[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(false);
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
+  const [currentBlock, setCurrentBlock] = useState<bigint>(0n);
 
   const toggleStatus = (key: StatusKey) => {
     setStatusFilters(prev => {
@@ -99,13 +101,15 @@ export default function CollectionPage() {
     setLoading(true);
     setError(null);
     try {
-      const [all, hiddenRes] = await Promise.all([
+      const [all, hiddenRes, block] = await Promise.all([
         listOffers(),
         fetch('/api/hidden-listings').then(r => r.json()).catch(() => []),
+        fetchCurrentBlock().catch(() => 0n),
       ]);
       setOffers(all.filter((o) => o.token.toLowerCase() === addr.toLowerCase()));
       setTimestamps(getAllListingTimestamps());
       setHiddenIds(new Set(Array.isArray(hiddenRes) ? hiddenRes : []));
+      setCurrentBlock(block);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load');
     } finally {
@@ -204,6 +208,15 @@ export default function CollectionPage() {
       });
     }
 
+    // ── Expired listings: hide open listings past their expiryBlock ──────
+    if (currentBlock > 0n) {
+      list = list.filter(o => {
+        if (o.status !== 1) return true;
+        if (o.expiryBlock === 0n) return true;
+        return currentBlock < o.expiryBlock;
+      });
+    }
+
     // Own listings filter
     if (mineOnly && myOpnetAddr) {
       const norm = myOpnetAddr.toLowerCase();
@@ -245,7 +258,7 @@ export default function CollectionPage() {
     }
 
     return list;
-  }, [offers, sort, search, statusFilters, mineOnly, myOpnetAddr, privateToMe, address, hiddenIds]);
+  }, [offers, sort, search, statusFilters, mineOnly, myOpnetAddr, privateToMe, address, hiddenIds, currentBlock]);
 
   const hue = (() => {
     let h = 0;
@@ -510,7 +523,7 @@ export default function CollectionPage() {
       {viewMode === 'listings' && !loading && displayed.length > 0 && gridMode !== 'list' && (
         <div className={gridClass}>
           {displayed.map((o) => (
-            <OfferCard key={o.id.toString()} offer={o} createdAt={timestamps[o.id.toString()]} hidden={hiddenIds.has(o.id.toString())} />
+            <OfferCard key={o.id.toString()} offer={o} createdAt={timestamps[o.id.toString()]} hidden={hiddenIds.has(o.id.toString())} currentBlock={currentBlock} />
           ))}
         </div>
       )}
@@ -519,7 +532,7 @@ export default function CollectionPage() {
       {viewMode === 'listings' && !loading && displayed.length > 0 && gridMode === 'list' && (
         <div className={gridClass}>
           {displayed.map((o) => (
-            <OfferCardRow key={o.id.toString()} offer={o} createdAt={timestamps[o.id.toString()]} hidden={hiddenIds.has(o.id.toString())} />
+            <OfferCardRow key={o.id.toString()} offer={o} createdAt={timestamps[o.id.toString()]} hidden={hiddenIds.has(o.id.toString())} currentBlock={currentBlock} />
           ))}
         </div>
       )}

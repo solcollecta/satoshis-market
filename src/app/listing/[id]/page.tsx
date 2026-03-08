@@ -8,6 +8,8 @@ import {
   simulateEscrowWrite,
   calcFeeSats,
   formatBtcFromSats,
+  fetchCurrentBlock,
+  blocksToTimeStr,
   getOpscanAccountUrl,
   getOpscanTxUrl,
   getOpscanTokenUrl,
@@ -97,6 +99,7 @@ export default function OfferDetailPage({
 
   const [offer, setOffer] = useState<Offer | null>(null);
   const [feeRecipientKey, setFeeRecipientKey] = useState<bigint>(0n);
+  const [currentBlock, setCurrentBlock] = useState<bigint>(0n);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -171,10 +174,12 @@ export default function OfferDetailPage({
     Promise.all([
       getOffer(offerId),
       import('@/lib/opnet').then((m) => m.getFeeRecipientKey()),
+      fetchCurrentBlock().catch(() => 0n),
     ])
-      .then(([o, feeKey]) => {
+      .then(([o, feeKey, block]) => {
         setOffer(o);
         setFeeRecipientKey(feeKey);
+        setCurrentBlock(block);
       })
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'))
       .finally(() => setLoading(false));
@@ -374,6 +379,17 @@ export default function OfferDetailPage({
           {offer.status !== 1 && (
             <span className={`text-[11px] font-semibold px-3 py-1 rounded-full ${STATUS_STYLES[offer.status]}`}>
               {OFFER_STATUS[offer.status]}
+            </span>
+          )}
+          {offer.status === 1 && offer.expiryBlock > 0n && currentBlock > 0n && (
+            <span className={`text-[11px] font-semibold px-3 py-1 rounded-full ${
+              currentBlock < offer.expiryBlock
+                ? 'bg-amber-900/30 text-amber-400 border border-amber-700/30'
+                : 'bg-red-900/30 text-red-400 border border-red-700/30'
+            }`}>
+              {currentBlock < offer.expiryBlock
+                ? `Expires in ${blocksToTimeStr(offer.expiryBlock - currentBlock)}`
+                : 'Expired'}
             </span>
           )}
           {createdAt != null && (

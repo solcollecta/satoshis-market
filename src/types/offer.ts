@@ -19,4 +19,5 @@ export interface Offer {
   status: OfferStatusCode;
   feeBps: number;
   allowedTaker: bigint;  // 32-byte secp256k1 tweaked pubkey as bigint; 0n = public offer
+  expiryBlock: bigint;   // block height at which the listing expires; 0n = no expiry
 }

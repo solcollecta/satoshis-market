@@ -18,6 +18,7 @@ import {
 } from '@/lib/opnet';
 import { CopyableAddress } from './CopyableAddress';
 import { TokenAvatar } from './TokenAvatar';
+import { blocksToTimeStr } from '@/lib/opnet';
 import { formatRelativeCompact, formatTokenCompact } from '@/lib/tokens';
 import { useWallet } from '@/context/WalletContext';
 
@@ -34,6 +35,7 @@ interface Props {
   offer: Offer;
   createdAt?: number;
   hidden?: boolean;
+  currentBlock?: bigint;
 }
 
 interface TokenMeta { symbol: string; decimals: number }
@@ -84,7 +86,7 @@ function NftImage({ icon, name, loaded }: { icon?: string; name?: string; loaded
 
 // ── Card ─────────────────────────────────────────────────────────────────────
 
-export function OfferCard({ offer, createdAt, hidden }: Props) {
+export function OfferCard({ offer, createdAt, hidden, currentBlock }: Props) {
   const router = useRouter();
   const { address } = useWallet();
   const statusClass = STATUS_STYLES[offer.status] ?? STATUS_STYLES[0];
@@ -246,6 +248,13 @@ export function OfferCard({ offer, createdAt, hidden }: Props) {
             })()}
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {offer.status === 1 && offer.expiryBlock > 0n && currentBlock && currentBlock > 0n && (
+              <span className="text-amber-500 font-semibold">
+                {currentBlock < offer.expiryBlock
+                  ? `${blocksToTimeStr(offer.expiryBlock - currentBlock)} left`
+                  : 'Expired'}
+              </span>
+            )}
             {createdAt != null && (
               <span>
                 {offer.status === 2 ? 'Sold' : 'Listed'} {formatRelativeCompact(createdAt)}

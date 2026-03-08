@@ -68,6 +68,28 @@ function CreateOfferPage() {
   const [sharedFeesLocked, setSharedFeesLocked] = useState(false);
   const [hiddenListing, setHiddenListing] = useState(false);
 
+  // ── Duration ────────────────────────────────────────────────────────────────
+  type DurationUnit = 'hours' | 'days';
+  const [durationValue, setDurationValue] = useState('7');
+  const [durationUnit, setDurationUnit] = useState<DurationUnit>('days');
+  const BLOCKS_PER_HOUR = 6; // ~10 min/block
+  const BLOCKS_PER_DAY = 144;
+  const MIN_BLOCKS = BLOCKS_PER_HOUR; // 1 hour minimum
+
+  const durationBlocks = (() => {
+    const num = parseFloat(durationValue);
+    if (isNaN(num) || num <= 0) return 0;
+    const blocks = Math.round(durationUnit === 'days' ? num * BLOCKS_PER_DAY : num * BLOCKS_PER_HOUR);
+    return Math.max(blocks, MIN_BLOCKS);
+  })();
+
+  const durationError = (() => {
+    const num = parseFloat(durationValue);
+    if (!durationValue || isNaN(num) || num <= 0) return 'Duration is required';
+    if (durationUnit === 'hours' && num < 1) return 'Minimum duration is 1 hour';
+    return null;
+  })();
+
   /** Derived from connected wallet — no user input, no RPC needed */
   const makerRecipientKey = address ? (p2trAddressToKeyHex(address) ?? '') : '';
 
@@ -356,6 +378,8 @@ function CreateOfferPage() {
     if (feeSats < DUST_THRESHOLD) {
       return `Output below dust threshold (${DUST_THRESHOLD} sats minimum). Increase price.`;
     }
+    if (durationBlocks === 0) return 'Duration is required';
+    if (durationError) return durationError;
     if (!makerRecipientKey) return 'Wallet not connected — connect your wallet to continue';
     if (allowedTaker) {
       try {
@@ -372,7 +396,7 @@ function CreateOfferPage() {
 
   const getCallArgs = (): unknown[] => {
     const taker = allowedTaker ? hexToBigint(normalizeToHex32(allowedTaker)) : 0n;
-    const duration = 0; // 0 = default (30 days); will be user-configurable later
+    const duration = durationBlocks;
     if (mode === 'op20') {
       return [
         tokenAddress,
@@ -624,6 +648,74 @@ function CreateOfferPage() {
             </div>
           );
         })()}
+
+        {/* Duration selector */}
+        <div className="card">
+          <p className="text-xs text-slate-400 mb-3">Listing duration</p>
+          {/* Presets */}
+          <div className="flex gap-2 mb-3">
+            {[
+              { label: '1D', value: '1', unit: 'days' as DurationUnit },
+              { label: '7D', value: '7', unit: 'days' as DurationUnit },
+              { label: '30D', value: '30', unit: 'days' as DurationUnit },
+            ].map((preset) => {
+              const isActive = durationValue === preset.value && durationUnit === preset.unit;
+              return (
+                <button
+                  key={preset.label}
+                  type="button"
+                  onClick={() => { setDurationValue(preset.value); setDurationUnit(preset.unit); }}
+                  className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors border ${
+                    isActive
+                      ? 'bg-brand border-brand text-white'
+                      : 'border-surface-border text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {preset.label}
+                </button>
+              );
+            })}
+          </div>
+          {/* Custom input */}
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              inputMode="decimal"
+              placeholder="Custom"
+              value={durationValue}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (/^\d*\.?\d{0,1}$/.test(v) || v === '') setDurationValue(v);
+              }}
+              className="flex-1"
+            />
+            <div className="flex rounded-lg border border-surface-border overflow-hidden shrink-0">
+              {(['hours', 'days'] as DurationUnit[]).map((u) => (
+                <button
+                  key={u}
+                  type="button"
+                  onClick={() => setDurationUnit(u)}
+                  className={`px-3 py-2 text-xs font-semibold transition-colors ${
+                    durationUnit === u
+                      ? 'bg-brand text-white'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {u === 'hours' ? 'Hours' : 'Days'}
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* Info line */}
+          {durationBlocks > 0 && !durationError && (
+            <p className="text-xs text-slate-500 mt-2">
+              ≈ {durationBlocks.toLocaleString()} blocks
+            </p>
+          )}
+          {durationError && (
+            <p className="text-xs text-red-400 mt-2">{durationError}</p>
+          )}
+        </div>
 
         <form onSubmit={(e) => e.preventDefault()} className="card space-y-5">
           {/* Token address */}
