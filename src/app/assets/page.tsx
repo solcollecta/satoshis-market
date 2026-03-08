@@ -343,28 +343,25 @@ function AssetsPage() {
               <ViewToggle value={gridMode} onChange={setGridMode} />
             )}
 
-            {/* User filter (Listings only) */}
-            {viewMode === 'listings' && (
+            {/* User filter (Listings only, wallet required) */}
+            {viewMode === 'listings' && address && (
               <div className={pillGroup}>
                 <button
-                  onClick={() => address && setMineOnly(v => { if (v) return false; setPrivateToMe(false); return true; })}
-                  title={!address ? 'Connect your wallet first' : undefined}
-                  className={pill(mineOnly, !address)}
+                  onClick={() => setMineOnly(v => { if (v) return false; setPrivateToMe(false); return true; })}
+                  className={pill(mineOnly, false)}
                 >
                   My Listings
                 </button>
-                {address && (
-                  <button
-                    onClick={() => setPrivateToMe(v => { if (v) return false; setMineOnly(false); return true; })}
-                    className={`px-3 py-1 rounded-md text-xs font-semibold transition-all duration-150 ${
-                      privateToMe
-                        ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm'
-                        : 'text-slate-500 hover:text-white'
-                    }`}
-                  >
-                    My Private Deals
-                  </button>
-                )}
+                <button
+                  onClick={() => setPrivateToMe(v => { if (v) return false; setMineOnly(false); return true; })}
+                  className={`px-3 py-1 rounded-md text-xs font-semibold transition-all duration-150 ${
+                    privateToMe
+                      ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm'
+                      : 'text-slate-500 hover:text-white'
+                  }`}
+                >
+                  My Private Deals
+                </button>
               </div>
             )}
 
