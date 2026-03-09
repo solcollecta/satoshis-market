@@ -24,6 +24,7 @@ export default function RequestCreatePage() {
   const [tokenMeta, setTokenMeta]         = useState<{ name: string; symbol: string } | null>(null);
   const [sharedFees, setSharedFees]       = useState(false);
   const [submitting, setSubmitting]       = useState(false);
+  const [signing, setSigning]             = useState(false);
   const [error, setError]                 = useState<string | null>(null);
 
   // ── Auto-fetch token metadata ─────────────────────────────────────────────
@@ -83,10 +84,12 @@ export default function RequestCreatePage() {
         body.tokenId = tokenId.trim();
       }
 
+      setSigning(true);
       const signed = await signApiCall('createRequest', address!, {
         contractAddress: tokenAddress,
         assetType: mode,
       });
+      setSigning(false);
 
       const res  = await fetch('/api/requests', {
         method:  'POST',
@@ -100,6 +103,7 @@ export default function RequestCreatePage() {
       setError(e instanceof Error ? e.message : 'Unknown error');
     } finally {
       setSubmitting(false);
+      setSigning(false);
     }
   };
 
@@ -315,14 +319,21 @@ export default function RequestCreatePage() {
               Connect Wallet
             </button>
           ) : (
-            <button
-              type="button"
-              onClick={() => void handleSubmit()}
-              disabled={submitting}
-              className="btn-primary w-full"
-            >
-              {submitting ? 'Submitting…' : 'Submit Request'}
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => void handleSubmit()}
+                disabled={submitting}
+                className="btn-primary w-full"
+              >
+                {signing ? 'Sign in wallet…' : submitting ? 'Submitting…' : 'Submit Request'}
+              </button>
+              {signing && (
+                <p className="text-xs text-slate-500 text-center mt-2">
+                  Your wallet will ask you to sign a message. This verifies you own this address — no transaction is sent and no fees are charged.
+                </p>
+              )}
+            </>
           )}
         </form>
       </div>

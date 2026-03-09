@@ -42,6 +42,7 @@ export default function RequestDetailPage() {
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [signing, setSigning]       = useState(false);
 
   const [collection, setCollection]         = useState<NftCollectionInfo | null>(null);
   const [resolvedSymbol, setResolvedSymbol] = useState<string | null>(null);
@@ -90,8 +91,10 @@ export default function RequestDetailPage() {
   const handleCancel = async () => {
     if (!request || !address) return;
     setCancelling(true);
+    setSigning(true);
     try {
       const signed = await signApiCall('cancel', address, { requestId: request.id });
+      setSigning(false);
       const res = await fetch(`/api/requests/${request.id}/cancel`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -106,6 +109,7 @@ export default function RequestDetailPage() {
       setError(e instanceof Error ? e.message : 'Cancel failed');
     } finally {
       setCancelling(false);
+      setSigning(false);
     }
   };
 
@@ -302,14 +306,21 @@ export default function RequestDetailPage() {
           <>
             <div className="border-t border-surface-border" />
             {isRequester ? (
-              <button
-                type="button"
-                onClick={() => void handleCancel()}
-                disabled={cancelling}
-                className="btn-danger w-full"
-              >
-                {cancelling ? 'Cancelling…' : 'Cancel Request'}
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => void handleCancel()}
+                  disabled={cancelling}
+                  className="btn-danger w-full"
+                >
+                  {signing ? 'Sign in wallet…' : cancelling ? 'Cancelling…' : 'Cancel Request'}
+                </button>
+                {signing && (
+                  <p className="text-xs text-slate-500 text-center mt-2">
+                    Your wallet will ask you to sign a message. This verifies you own this address — no transaction is sent and no fees are charged.
+                  </p>
+                )}
+              </>
             ) : (
               <a
                 href={buildFulfillUrl(request)}
