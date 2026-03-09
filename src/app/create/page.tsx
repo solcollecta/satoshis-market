@@ -371,6 +371,8 @@ function CreateOfferPage() {
     if (!CONTRACT_ADDRESS) return 'Contract address not configured — check NEXT_PUBLIC_CONTRACT_ADDRESS in .env.local';
     if (!tokenAddress) return 'Token address is required';
     if (mode === 'op20' && tokenAmountRaw === 0n) return 'Token amount is required';
+    if (mode === 'op20' && tokenBalance !== null && tokenBalance === 0n) return 'You don\u2019t hold any of this token';
+    if (mode === 'op20' && tokenBalance !== null && tokenAmountRaw > tokenBalance) return 'Amount exceeds your balance';
     if (mode === 'op721' && !tokenId) return 'Token ID is required';
     if (btcSatsRaw === 0n) return 'BTC price is required';
     if (btcSatsRaw < DUST_THRESHOLD) return `Output below dust threshold (${DUST_THRESHOLD} sats minimum). Increase price.`;
@@ -772,11 +774,21 @@ function CreateOfferPage() {
                 <>
                   <p className="text-xs text-slate-400 mt-1.5">
                     Balance:{' '}
-                    <span className="text-slate-200">
+                    <span className={tokenBalance === 0n ? 'text-red-400' : 'text-slate-200'}>
                       {formatTokenBalance(tokenBalance, tokenDecimals)}
                       {tokenMeta ? ` ${tokenMeta.symbol}` : ''}
                     </span>
                   </p>
+                  {tokenBalance === 0n && (
+                    <p className="text-xs text-red-400 mt-1">
+                      You don&apos;t hold any of this token. Check the contract address.
+                    </p>
+                  )}
+                  {tokenBalance > 0n && tokenAmountRaw > tokenBalance && (
+                    <p className="text-xs text-red-400 mt-1">
+                      Amount exceeds your balance.
+                    </p>
+                  )}
                   <div className="flex gap-1.5 mt-1.5">
                     {([25n, 50n, 75n, 100n] as bigint[]).map((pct) => (
                       <button
