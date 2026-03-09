@@ -94,11 +94,40 @@ export async function GET(req: Request) {
     try {
       console.log('[nft-metadata] trying', fetchUrl);
 
-      const res = await fetch(fetchUrl, {
+      let res = await fetch(fetchUrl, {
         signal: AbortSignal.timeout(20_000), // 20s — IPFS gateways are slow
-        redirect: 'follow',
+        redirect: 'manual',
         headers: { Accept: 'application/json, */*' },
       });
+
+      // Handle redirects manually to prevent SSRF via open-redirect
+      if ([301, 302, 307, 308].includes(res.status)) {
+        const location = res.headers.get('location');
+        if (!location) {
+          errors.push(`${fetchUrl} → redirect ${res.status} with no Location header`);
+          continue;
+        }
+        let redirectHost: string;
+        try {
+          const redirectUrl = new URL(location, fetchUrl);
+          redirectHost = redirectUrl.hostname.toLowerCase();
+        } catch {
+          errors.push(`${fetchUrl} → redirect to invalid URL: ${location.slice(0, 200)}`);
+          continue;
+        }
+        if (!ALLOWED_HOSTS.has(redirectHost)) {
+          console.warn('[nft-metadata] blocked redirect to disallowed host', { fetchUrl, location });
+          errors.push(`${fetchUrl} → redirect to disallowed host: ${redirectHost}`);
+          continue;
+        }
+        const resolvedUrl = new URL(location, fetchUrl).toString();
+        console.log('[nft-metadata] following validated redirect', { from: fetchUrl, to: resolvedUrl });
+        res = await fetch(resolvedUrl, {
+          signal: AbortSignal.timeout(20_000),
+          redirect: 'manual',
+          headers: { Accept: 'application/json, */*' },
+        });
+      }
 
       const contentType = res.headers.get('content-type') ?? '';
       console.log('[nft-metadata] response', { fetchUrl, status: res.status, contentType });

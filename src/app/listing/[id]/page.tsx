@@ -315,6 +315,7 @@ export default function OfferDetailPage({
     ? `Buy NFT · ${formatBtcFromSats(totalRequired)}`
     : `Buy tokens · ${formatBtcFromSats(totalRequired)}`;
   const isOpen = offer.status === 1;
+  const isExpired = offer.expiryBlock > 0n && currentBlock > 0n && currentBlock >= offer.expiryBlock;
 
   const hasAllowedTaker = offer.allowedTaker !== 0n;
   const isAllowedTaker = (() => {
@@ -510,16 +511,23 @@ export default function OfferDetailPage({
                 )}
 
                 {!isMaker && cancelFlow.state.phase === 'idle' && (
+                  <>
+                  {isExpired && isOpen && (
+                    <div className="bg-red-950/30 border border-red-700/30 rounded-xl p-4 text-xs text-red-400">
+                      This listing has expired and can no longer be purchased.
+                    </div>
+                  )}
                   <FillProgress
                     state={fillFlow.state}
                     onFill={handleFill}
                     onReset={fillFlow.reset}
                     onCheckStatus={() => void fillFlow.checkStatus()}
-                    disabled={Boolean(address && hasAllowedTaker && !isAllowedTaker)}
+                    disabled={Boolean(isExpired || (address && hasAllowedTaker && !isAllowedTaker))}
                     fillLabel={address ? buyLabel : 'Connect Wallet'}
                     btcBalanceSats={address ? btcBalanceSats : undefined}
                     requiredSats={isOpen ? totalRequired : undefined}
                   />
+                  </>
                 )}
 
                 {isMaker && (

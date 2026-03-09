@@ -22,6 +22,25 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
+/** Only safe read-only JSON-RPC methods are forwarded to the upstream node. */
+const ALLOWED_METHODS = new Set([
+  'btc_call',
+  'btc_getBlockNumber',
+  'btc_getBalance',
+  'btc_getTransactionReceipt',
+  'btc_getCode',
+  'btc_getStorageAt',
+  'btc_blockNumber',
+  'btc_chainId',
+  'btc_gasPrice',
+  'btc_estimateGas',
+  'btc_getLogs',
+  'btc_getBlockByNumber',
+  'btc_getBlockByHash',
+  'btc_getTransactionByHash',
+  'btc_getTransactionCount',
+]);
+
 const TARGET_URL = process.env.OP_RPC_URL ?? process.env.NEXT_PUBLIC_OP_RPC_URL;
 
 const rpcError = (message: string, status: number) =>
@@ -38,15 +57,37 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // --- Method whitelist check ---
+  let body: string;
+  try {
+    body = await req.text();
+  } catch {
+    return rpcError('Invalid request body', 400);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return rpcError('Malformed JSON', 400);
+  }
+
+  const method =
+    typeof parsed === 'object' && parsed !== null && 'method' in parsed && typeof (parsed as Record<string, unknown>).method === 'string'
+      ? (parsed as Record<string, unknown>).method as string
+      : '';
+  if (!ALLOWED_METHODS.has(method)) {
+    return NextResponse.json({ error: `Method not allowed: ${method}` }, { status: 403 });
+  }
+
   let upstream: Response;
   try {
-    const body = await req.text();
     upstream = await fetch(TARGET_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body,
+      body, // already read above
     });
-  } catch (err) {
+  } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'network error';
     return rpcError(`RPC upstream unreachable: ${msg}`, 502);
   }
