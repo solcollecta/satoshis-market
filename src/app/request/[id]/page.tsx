@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useWallet } from '@/context/WalletContext';
+import { signApiCall } from '@/lib/signMessage';
 import type { BuyRequest } from '@/lib/requestsDb';
 import { CopyableAddress } from '@/components/CopyableAddress';
 import { TokenAvatar } from '@/components/TokenAvatar';
@@ -90,10 +91,11 @@ export default function RequestDetailPage() {
     if (!request || !address) return;
     setCancelling(true);
     try {
+      const signed = await signApiCall('cancel', address, { requestId: request.id });
       const res = await fetch(`/api/requests/${request.id}/cancel`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ requesterAddress: address }),
+        body:    JSON.stringify({ requesterAddress: address, ...signed }),
       });
       if (!res.ok) {
         const d = await res.json() as { error?: string };

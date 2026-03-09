@@ -368,8 +368,17 @@ export default function OfferDetailPage({
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-[11px] font-semibold text-slate-600 uppercase tracking-widest mb-1">
-            {offer.isNFT ? 'OP-721' : 'OP-20'}
+          <p className="text-[11px] font-semibold text-slate-600 uppercase tracking-widest mb-1 flex items-center gap-2">
+            <span>{offer.isNFT ? 'OP-721' : 'OP-20'}</span>
+            {offer.status === 1 && offer.expiryBlock > 0n && currentBlock > 0n && (
+              <span className={`text-[10px] font-medium ${
+                currentBlock < offer.expiryBlock ? 'text-amber-500/70' : 'text-red-400/70'
+              }`}>
+                · {currentBlock < offer.expiryBlock
+                    ? blocksToTimeStr(offer.expiryBlock - currentBlock)
+                    : 'Expired'}
+              </span>
+            )}
           </p>
           <h1 className="text-2xl font-bold text-white tracking-tight">
             Listing <span className="text-brand">#{offer.id.toString()}</span>
@@ -379,17 +388,6 @@ export default function OfferDetailPage({
           {offer.status !== 1 && (
             <span className={`text-[11px] font-semibold px-3 py-1 rounded-full ${STATUS_STYLES[offer.status]}`}>
               {OFFER_STATUS[offer.status]}
-            </span>
-          )}
-          {offer.status === 1 && offer.expiryBlock > 0n && currentBlock > 0n && (
-            <span className={`text-[11px] font-semibold px-3 py-1 rounded-full ${
-              currentBlock < offer.expiryBlock
-                ? 'bg-amber-900/30 text-amber-400 border border-amber-700/30'
-                : 'bg-red-900/30 text-red-400 border border-red-700/30'
-            }`}>
-              {currentBlock < offer.expiryBlock
-                ? `Expires in ${blocksToTimeStr(offer.expiryBlock - currentBlock)}`
-                : 'Expired'}
             </span>
           )}
           {createdAt != null && (

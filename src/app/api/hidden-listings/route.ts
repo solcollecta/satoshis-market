@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { markHidden, getHiddenIds } from '@/lib/hiddenDb';
+import { verifySignedRequest } from '@/lib/verifySignature';
 
 /** GET — return all hidden offer IDs as a JSON array. */
 export async function GET() {
@@ -12,15 +13,25 @@ export async function GET() {
   }
 }
 
-/** POST — mark an offer as hidden. Body: { offerId, creatorAddress } */
+/** POST — mark an offer as hidden. Body: { offerId, creatorAddress, message, signature, publicKey } */
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json() as Record<string, unknown>;
-    const offerId        = typeof body.offerId === 'string' ? body.offerId.trim() : '';
+    const offerId        = typeof body.offerId        === 'string' ? body.offerId.trim()        : '';
     const creatorAddress = typeof body.creatorAddress === 'string' ? body.creatorAddress.trim() : '';
 
     if (!offerId || !creatorAddress) {
       return NextResponse.json({ error: 'offerId and creatorAddress are required' }, { status: 400 });
+    }
+
+    // Verify wallet signature
+    const message   = typeof body.message   === 'string' ? body.message   : '';
+    const signature = typeof body.signature === 'string' ? body.signature : '';
+    const publicKey = typeof body.publicKey === 'string' ? body.publicKey : '';
+
+    const verify = verifySignedRequest(message, signature, publicKey, 'hide', creatorAddress);
+    if (!verify.valid) {
+      return NextResponse.json({ error: verify.error ?? 'Signature verification failed' }, { status: 403 });
     }
 
     await markHidden(offerId, creatorAddress);

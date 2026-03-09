@@ -38,6 +38,23 @@ import type {
 import { AtomicSwapEscrowAbi } from './abi';
 import type { Offer, OfferStatusCode } from '@/types/offer';
 
+// ── Pure Uint8Array hex helpers (no Buffer) ──────────────────────────────────
+
+/** Convert a hex string (with or without 0x prefix) to Uint8Array */
+function hexToU8(hex: string): Uint8Array {
+  const clean = hex.startsWith('0x') || hex.startsWith('0X') ? hex.slice(2) : hex;
+  const out = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < out.length; i++) {
+    out[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
+}
+
+/** Convert a Uint8Array (or number[]) to lowercase hex string (no 0x prefix) */
+function u8ToHex(bytes: Uint8Array | number[]): string {
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 // ── Config ────────────────────────────────────────────────────────────────────
 
 export const OP_RPC_URL =
@@ -692,9 +709,22 @@ export async function fetchNftMetadata(
 
     let json: Record<string, unknown>;
     if (uri.startsWith('data:application/json')) {
+      // Cap data URI length to prevent abuse
+      if (uri.length > 100_000) {
+        console.warn('[fetchNftMetadata] data: URI too large', { tokenId: tid, len: uri.length });
+        _nftTokenCache.set(cacheKey, null);
+        return null;
+      }
       const [, payload] = uri.split(',');
       const decoded = uri.includes(';base64,') ? atob(payload) : decodeURIComponent(payload);
       json = JSON.parse(decoded) as Record<string, unknown>;
+      // Validate image URL scheme from on-chain data (prevent javascript: injection)
+      if (typeof json.image === 'string') {
+        const img = json.image.trim().toLowerCase();
+        if (!img.startsWith('https://') && !img.startsWith('ipfs://') && !img.startsWith('data:image/')) {
+          json.image = undefined; // strip unsafe image URIs
+        }
+      }
     } else {
       const proxyUrl = `/api/nft-metadata?url=${encodeURIComponent(uri)}`;
       console.log('[fetchNftMetadata] fetching via proxy', { tokenId: tid, proxyUrl });
@@ -887,7 +917,7 @@ function normalizeApprovedAddress(val: unknown): string | null {
       const decoded = bech32m.decode(s, 90);
       const progBytes = bech32m.fromWords(decoded.words.slice(1));
       if (progBytes.length >= 20) {
-        const hex = Buffer.from(progBytes).toString('hex').toLowerCase();
+        const hex = u8ToHex(progBytes).toLowerCase();
         return /^0+$/.test(hex) ? null : hex;
       }
     } catch { /* not a valid bech32m — fall through */ }
@@ -1217,9 +1247,9 @@ export interface FillSimulation {
  * Build the P2TR scriptPubKey Buffer for a 32-byte tweaked pubkey bigint.
  * Format: OP_1 OP_PUSH32 <32-byte-key> → bytes [0x51, 0x20, ...keyBytes]
  */
-function p2trScriptBuf(tweakedPubkey: bigint): Buffer {
+function p2trScriptBuf(tweakedPubkey: bigint): Uint8Array {
   const hex = tweakedPubkey.toString(16).padStart(64, '0');
-  return Buffer.from('5120' + hex, 'hex');
+  return hexToU8('5120' + hex);
 }
 
 /**
@@ -1233,7 +1263,7 @@ function p2trScriptBuf(tweakedPubkey: bigint): Buffer {
  * version 1, 32-byte key payload — identical to a standard P2TR address.
  */
 function keyToP2TRAddress(tweakedPubkey: bigint): string {
-  const keyBytes = Buffer.from(tweakedPubkey.toString(16).padStart(64, '0'), 'hex');
+  const keyBytes = hexToU8(tweakedPubkey.toString(16).padStart(64, '0'));
   const words = bech32m.toWords(keyBytes);
   words.unshift(1); // witness version 1
   return bech32m.encode(OP_NETWORK.bech32, words, 90);
@@ -1311,8 +1341,11 @@ export async function simulateFillOffer(
 
   // ── Format 2: PsbtOutputExtended for actual wallet transaction ────────────
   // value must be a number (satoshis). Safe for amounts up to ~9×10¹⁵ sats.
+  // PsbtOutputExtended.script expects Buffer type from @btc-vision/bitcoin.
+  // We build Uint8Array and cast — at runtime Buffer extends Uint8Array so
+  // the wallet SDK accepts both. The cast satisfies the compile-time check.
   const psbtOutputs: PsbtOutputExtended[] = rawOutputs.map((o) => ({
-    script: p2trScriptBuf(o.key),
+    script: p2trScriptBuf(o.key) as unknown as Buffer,
     value: Number(o.sats),
   }));
 
@@ -1352,7 +1385,7 @@ export async function buildCalldata(
   const contract = getEscrowContract();
   const resolvedArgs = await resolveArgsForAbi(AtomicSwapEscrowAbi, functionName, args);
   const buf = contract.encodeCalldata(functionName, resolvedArgs);
-  return '0x' + Buffer.from(buf).toString('hex');
+  return '0x' + u8ToHex(buf);
 }
 
 // ── P2TR address → 32-byte key decoder ───────────────────────────────────────
@@ -1370,7 +1403,7 @@ export function p2trAddressToKeyHex(addr: string): string | null {
     if (decoded.words[0] !== 1) return null; // P2TR = witness version 1
     const keyBytes = bech32m.fromWords(decoded.words.slice(1));
     if (keyBytes.length !== 32) return null;
-    return '0x' + Buffer.from(keyBytes).toString('hex');
+    return '0x' + u8ToHex(keyBytes);
   } catch {
     return null;
   }
@@ -1402,7 +1435,7 @@ export function normalizeToHex32(addr: string): string {
     if (decoded.words[0] !== 1) throw new Error('Not a P2TR address (witness version must be 1)');
     const keyBytes = bech32m.fromWords(decoded.words.slice(1));
     if (keyBytes.length !== 32) throw new Error('P2TR key must be 32 bytes');
-    return '0x' + Buffer.from(keyBytes).toString('hex');
+    return '0x' + u8ToHex(keyBytes);
   } catch (e) {
     throw new Error(
       `Cannot parse address "${addr}": ${e instanceof Error ? e.message : String(e)}`,
@@ -1420,7 +1453,14 @@ export function normalizeToHex32(addr: string): string {
 export function hex32ToP2TRAddress(keyHex: string): string {
   const clean =
     keyHex.startsWith('0x') || keyHex.startsWith('0X') ? keyHex.slice(2) : keyHex;
-  const keyBytes = Buffer.from(clean.padStart(64, '0'), 'hex');
+  if (!clean || /^0+$/.test(clean)) {
+    throw new Error(`Invalid key for P2TR address: "${keyHex}" — would produce an all-zero unspendable address`);
+  }
+  const padded = clean.padStart(64, '0');
+  if (!/^[0-9a-fA-F]{64}$/.test(padded)) {
+    throw new Error(`Invalid hex key: "${keyHex}"`);
+  }
+  const keyBytes = hexToU8(padded);
   const words = bech32m.toWords(keyBytes);
   words.unshift(1); // witness version 1
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

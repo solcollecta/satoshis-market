@@ -3,8 +3,9 @@
 import React, { useMemo, useState } from "react";
 import { connectWallet, detectProvider } from "@/lib/wallet";
 
-// Your deployed TestToken contract (OPNet address)
-const TOKEN_CONTRACT = "opt1sqpfywwx4ytplgll9qyr5jl4j8q5jrr29vs9xww6t";
+// Deployed TestToken contract — configurable via env var
+const TOKEN_CONTRACT =
+  process.env.NEXT_PUBLIC_MINT_TOKEN_ADDRESS ?? "opt1sqpfywwx4ytplgll9qyr5jl4j8q5jrr29vs9xww6t";
 
 // Selector from your token build output:
 // faucetMint(uint256) => 0x8774ffe6
@@ -44,7 +45,7 @@ function concatBytes(...parts: Uint8Array[]): Uint8Array {
 }
 
 function bytesToHex(bytes: Uint8Array): string {
-  return "0x" + Buffer.from(bytes).toString("hex");
+  return "0x" + Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 export default function MintPage() {
@@ -87,7 +88,7 @@ export default function MintPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const res = await (opnet.web3.signAndBroadcastInteraction as any)({
         to: TOKEN_CONTRACT,
-        calldata: Buffer.from(calldataHex.replace(/^0x/, ""), "hex"),
+        calldata: hexToBytes(calldataHex),
       });
 
       // Return type is [BroadcastedTransaction, BroadcastedTransaction, UTXO[], string]

@@ -8,8 +8,7 @@ export async function GET(req: NextRequest) {
     const sales = await getSalesForSeller(seller);
     return NextResponse.json(sales);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error('[api/sales GET]', msg);
-    return NextResponse.json({ error: 'Internal error', detail: msg }, { status: 500 });
+    console.error('[api/sales GET]', err);
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 }

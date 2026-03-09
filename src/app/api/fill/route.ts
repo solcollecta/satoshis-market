@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getFillTxid, saveFillTxid } from '@/lib/fillsDb';
+import { verifySignedRequest } from '@/lib/verifySignature';
 
 export async function GET(req: NextRequest) {
   try {
@@ -8,9 +9,8 @@ export async function GET(req: NextRequest) {
     const txid = await getFillTxid(listingId);
     return NextResponse.json({ txid });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error('[api/fill GET]', msg);
-    return NextResponse.json({ error: 'Internal error', detail: msg }, { status: 500 });
+    console.error('[api/fill GET]', err);
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 }
 
@@ -19,17 +19,27 @@ export async function POST(req: NextRequest) {
     const body = await req.json() as Record<string, unknown>;
     const listingId = typeof body.listingId === 'string' ? body.listingId.trim()
                     : typeof body.listingId === 'number' ? String(body.listingId) : '';
-    const txid   = typeof body.txid   === 'string' ? body.txid.trim()   : '';
-    const seller = typeof body.seller === 'string' ? body.seller.trim() : '';
+    const txid      = typeof body.txid      === 'string' ? body.txid.trim()      : '';
+    const seller    = typeof body.seller    === 'string' ? body.seller.trim()    : '';
 
     if (!listingId) return NextResponse.json({ error: 'listingId required' }, { status: 400 });
     if (!txid)      return NextResponse.json({ error: 'txid required' },      { status: 400 });
+    if (!seller)    return NextResponse.json({ error: 'seller required' },     { status: 400 });
+
+    // Verify wallet signature
+    const message   = typeof body.message   === 'string' ? body.message   : '';
+    const signature = typeof body.signature === 'string' ? body.signature : '';
+    const publicKey = typeof body.publicKey === 'string' ? body.publicKey : '';
+
+    const verify = verifySignedRequest(message, signature, publicKey, 'fill', seller);
+    if (!verify.valid) {
+      return NextResponse.json({ error: verify.error ?? 'Signature verification failed' }, { status: 403 });
+    }
 
     await saveFillTxid(listingId, txid, seller);
     return NextResponse.json({ ok: true });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error('[api/fill POST]', msg);
-    return NextResponse.json({ error: 'Internal error', detail: msg }, { status: 500 });
+    console.error('[api/fill POST]', err);
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 }

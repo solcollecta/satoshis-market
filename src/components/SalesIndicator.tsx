@@ -65,17 +65,25 @@ export function SalesIndicator() {
     }
 
     const unsub = onSalesUpdated(data => {
-      _cachedSales = data;
-      _cacheTs = Date.now();
+      // Only update cache if the data belongs to the current seller
+      if (address && address === _cachedSeller) {
+        _cachedSales = data;
+        _cacheTs = Date.now();
+      }
       if (!cancelled) refresh(address ?? undefined, data);
     });
 
     return () => { cancelled = true; unsub(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Re-fetch when wallet changes
+  // Re-fetch when wallet changes — clear stale cache from previous wallet
   useEffect(() => {
-    if (!address) { setSales([]); setOpen(false); return; }
+    if (!address) {
+      setSales([]); setOpen(false);
+      // Invalidate module cache so next wallet doesn't see stale data
+      _cachedSales = []; _cachedSeller = ''; _cacheTs = 0;
+      return;
+    }
     let cancelled = false;
     fetchSalesCached(address)
       .then(data => { if (!cancelled) refresh(address, data); });

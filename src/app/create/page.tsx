@@ -24,6 +24,7 @@ import { TokenPicker } from '@/components/TokenPicker';
 import { TxProgress } from '@/components/TxProgress';
 import { useTxFlow } from '@/hooks/useTxFlow';
 import { saveCreateDraft, loadCreateDraft, clearCreateDraft } from '@/lib/createDraft';
+import { signApiCall } from '@/lib/signMessage';
 
 type Mode = 'op20' | 'op721';
 
@@ -317,14 +318,20 @@ function CreateOfferPage() {
   useEffect(() => {
     if (flow.state.phase !== 'create_confirmed') return;
     if (!flow.state.offerId || !requestIdRef.current || !address) return;
-    void fetch(`/api/requests/${requestIdRef.current}/fulfill`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({
-        listingId:   flow.state.offerId.toString(),
-        fulfilledBy: address,
-      }),
-    });
+    void signApiCall('fulfill', address, {
+      requestId: requestIdRef.current,
+      listingId: flow.state.offerId.toString(),
+    }).then(signed => {
+      fetch(`/api/requests/${requestIdRef.current}/fulfill`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          listingId:   flow.state.offerId!.toString(),
+          fulfilledBy: address,
+          ...signed,
+        }),
+      });
+    }).catch(err => console.warn('[fulfill] signing failed:', err));
   }, [flow.state.phase, flow.state.offerId, address]);
 
   // ── Warn before unload when a tx has been broadcast ───────────────────────
@@ -348,14 +355,19 @@ function CreateOfferPage() {
 
       // Mark as hidden in DB if the creator checked "Hidden"
       if (hiddenListing && address) {
-        fetch('/api/hidden-listings', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            offerId: flow.state.offerId.toString(),
-            creatorAddress: address,
-          }),
-        }).catch(() => { /* best-effort */ });
+        signApiCall('hide', address, { offerId: flow.state.offerId.toString() })
+          .then(signed => {
+            fetch('/api/hidden-listings', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                offerId: flow.state.offerId!.toString(),
+                creatorAddress: address,
+                ...signed,
+              }),
+            });
+          })
+          .catch(() => { /* best-effort */ });
       }
 
       const t = setTimeout(
@@ -617,105 +629,102 @@ function CreateOfferPage() {
           </p>
         </div>
 
-        {/* Mode selector */}
+        {/* Offer type + Duration */}
         {(() => {
           const isModeChangeable = ['idle', 'approve_failed', 'create_failed'].includes(flow.state.phase);
           return (
-            <div className="card">
-              <p className="text-xs text-slate-400 mb-3">Offer type</p>
-              <div className="flex gap-2">
-                {(['op20', 'op721'] as Mode[]).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => { if (!isModeChangeable) return; setMode(m); flow.reset(); }}
-                    disabled={!isModeChangeable}
-                    className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors border ${
-                      mode === m
-                        ? 'bg-brand border-brand text-white'
-                        : 'border-surface-border text-slate-400 hover:text-white'
-                    }${!isModeChangeable ? ' opacity-40 cursor-not-allowed' : ''}`}
-                  >
-                    {m === 'op20' ? 'OP-20 Token' : 'OP-721 NFT'}
-                  </button>
-                ))}
+            <div className="card space-y-4">
+              {/* Offer type */}
+              <div>
+                <p className="text-[11px] text-slate-500 uppercase tracking-wider font-semibold mb-2">Type</p>
+                <div className="flex gap-1.5">
+                  {(['op20', 'op721'] as Mode[]).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => { if (!isModeChangeable) return; setMode(m); flow.reset(); }}
+                      disabled={!isModeChangeable}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-colors border ${
+                        mode === m
+                          ? 'bg-brand border-brand text-white'
+                          : 'border-surface-border text-slate-400 hover:text-white'
+                      }${!isModeChangeable ? ' opacity-40 cursor-not-allowed' : ''}`}
+                    >
+                      {m === 'op20' ? 'OP-20 Token' : 'OP-721 NFT'}
+                    </button>
+                  ))}
+                </div>
+                {!isModeChangeable && (
+                  <p className="text-[10px] text-amber-500/80 mt-1.5">
+                    Locked while a transaction is in progress.
+                  </p>
+                )}
               </div>
-              {!isModeChangeable && (
-                <p className="text-xs text-amber-500/80 mt-2">
-                  Mode locked while a transaction is in progress. Reset the flow to switch.
-                </p>
-              )}
+
+              <div className="border-t border-surface-border" />
+
+              {/* Duration */}
+              <div>
+                <p className="text-[11px] text-slate-500 uppercase tracking-wider font-semibold mb-2">Duration</p>
+                <div className="flex gap-1.5 mb-2">
+                  {[
+                    { label: '1D', value: '1', unit: 'days' as DurationUnit },
+                    { label: '7D', value: '7', unit: 'days' as DurationUnit },
+                    { label: '30D', value: '30', unit: 'days' as DurationUnit },
+                  ].map((preset) => {
+                    const isActive = durationValue === preset.value && durationUnit === preset.unit;
+                    return (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() => { setDurationValue(preset.value); setDurationUnit(preset.unit); }}
+                        className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-colors border ${
+                          isActive
+                            ? 'bg-brand border-brand text-white'
+                            : 'border-surface-border text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="Custom"
+                    value={durationValue}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (/^\d*\.?\d{0,1}$/.test(v) || v === '') setDurationValue(v);
+                    }}
+                    className="flex-1 text-sm py-1.5"
+                  />
+                  <div className="flex rounded-lg border border-surface-border overflow-hidden shrink-0">
+                    {(['hours', 'days'] as DurationUnit[]).map((u) => (
+                      <button
+                        key={u}
+                        type="button"
+                        onClick={() => setDurationUnit(u)}
+                        className={`px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${
+                          durationUnit === u
+                            ? 'bg-brand text-white'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {u === 'hours' ? 'Hrs' : 'Days'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {durationError && (
+                  <p className="text-[10px] text-red-400 mt-1.5">{durationError}</p>
+                )}
+              </div>
             </div>
           );
         })()}
-
-        {/* Duration selector */}
-        <div className="card">
-          <p className="text-xs text-slate-400 mb-3">Listing duration</p>
-          {/* Presets */}
-          <div className="flex gap-2 mb-3">
-            {[
-              { label: '1D', value: '1', unit: 'days' as DurationUnit },
-              { label: '7D', value: '7', unit: 'days' as DurationUnit },
-              { label: '30D', value: '30', unit: 'days' as DurationUnit },
-            ].map((preset) => {
-              const isActive = durationValue === preset.value && durationUnit === preset.unit;
-              return (
-                <button
-                  key={preset.label}
-                  type="button"
-                  onClick={() => { setDurationValue(preset.value); setDurationUnit(preset.unit); }}
-                  className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors border ${
-                    isActive
-                      ? 'bg-brand border-brand text-white'
-                      : 'border-surface-border text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {preset.label}
-                </button>
-              );
-            })}
-          </div>
-          {/* Custom input */}
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              inputMode="decimal"
-              placeholder="Custom"
-              value={durationValue}
-              onChange={(e) => {
-                const v = e.target.value;
-                if (/^\d*\.?\d{0,1}$/.test(v) || v === '') setDurationValue(v);
-              }}
-              className="flex-1"
-            />
-            <div className="flex rounded-lg border border-surface-border overflow-hidden shrink-0">
-              {(['hours', 'days'] as DurationUnit[]).map((u) => (
-                <button
-                  key={u}
-                  type="button"
-                  onClick={() => setDurationUnit(u)}
-                  className={`px-3 py-2 text-xs font-semibold transition-colors ${
-                    durationUnit === u
-                      ? 'bg-brand text-white'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {u === 'hours' ? 'Hours' : 'Days'}
-                </button>
-              ))}
-            </div>
-          </div>
-          {/* Info line */}
-          {durationBlocks > 0 && !durationError && (
-            <p className="text-xs text-slate-500 mt-2">
-              ≈ {durationBlocks.toLocaleString()} blocks
-            </p>
-          )}
-          {durationError && (
-            <p className="text-xs text-red-400 mt-2">{durationError}</p>
-          )}
-        </div>
 
         <form onSubmit={(e) => e.preventDefault()} className="card space-y-5">
           {/* Token address */}

@@ -21,14 +21,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { checkTxConfirmed, getOffer } from '@/lib/opnet';
 import { addPendingTx, removePendingTx } from '@/lib/pendingTxs';
+import { signApiCall } from '@/lib/signMessage';
 
 /** Fire-and-forget: save fill txid + seller to DB so all viewers can see it. */
 function saveFillTxid(listingId: string, txid: string, seller: string) {
-  fetch('/api/fill', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ listingId, txid, seller }),
-  }).catch(err => console.warn('[saveFillTxid]', err));
+  signApiCall('fill', seller, { listingId, txid })
+    .then(signed => {
+      fetch('/api/fill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ listingId, txid, seller, ...signed }),
+      }).catch(err => console.warn('[saveFillTxid]', err));
+    })
+    .catch(err => {
+      // Fallback: send without signature (server will reject, but log it)
+      console.warn('[saveFillTxid] signing failed, sending unsigned:', err);
+    });
 }
 
 export type FillPhase = 'idle' | 'simulating' | 'pending' | 'confirmed' | 'failed';
@@ -119,8 +127,8 @@ export function useFillFlow(offerId: bigint, sellerAddress?: string) {
     addPendingTx({ type: 'fill', txid, offerId: offerIdRef.current.toString() });
     setState({ phase: 'pending', txid, error: null, elapsed: 0 });
 
-    // Persist txid + seller to DB so all viewers can see it + seller gets notified
-    saveFillTxid(offerIdRef.current.toString(), txid, sellerRef.current);
+    // NOTE: saveFillTxid is called AFTER confirmation (not on broadcast)
+    // to avoid stale records if the transaction is reverted or dropped.
 
     const entry: FillPollEntry = {
       pollId: null,
@@ -169,6 +177,9 @@ export function useFillFlow(offerId: bigint, sellerAddress?: string) {
         if (activeTxidRef.current === txid) activeTxidRef.current = null;
         removePendingTx(txid);
 
+        // Persist fill to DB only after on-chain confirmation
+        saveFillTxid(offerIdRef.current.toString(), txid, sellerRef.current);
+
         setState(s => {
           if (s.txid !== txid) return s;
           return { ...s, phase: 'confirmed' };
@@ -184,7 +195,10 @@ export function useFillFlow(offerId: bigint, sellerAddress?: string) {
           clearTxPoll(txid);
           if (activeTxidRef.current === txid) activeTxidRef.current = null;
           removePendingTx(txid);
-  
+
+          // Persist fill to DB only after on-chain confirmation
+          saveFillTxid(offerIdRef.current.toString(), txid, sellerRef.current);
+
           setState(s => {
             if (s.txid !== txid) return s;
             return { ...s, phase: 'confirmed' };

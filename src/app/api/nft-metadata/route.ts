@@ -10,6 +10,17 @@ export const dynamic = 'force-dynamic';
  *   https?://...         → use as-is (single candidate)
  *   anything else        → null → caller returns 400
  */
+/** Allowed HTTPS hostnames for direct URL pass-through (SSRF protection) */
+const ALLOWED_HOSTS = new Set([
+  'images.opnet.org',
+  'cloudflare-ipfs.com',
+  'ipfs.io',
+  'dweb.link',
+  'gateway.pinata.cloud',
+  'nftstorage.link',
+  'arweave.net',
+]);
+
 function buildCandidates(raw: string): string[] | null {
   if (raw.startsWith('ipfs://')) {
     let cidPath = raw.slice(7);
@@ -23,7 +34,33 @@ function buildCandidates(raw: string): string[] | null {
     ];
   }
 
-  if (/^https?:\/\//.test(raw)) return [raw];
+  if (/^https?:\/\//.test(raw)) {
+    try {
+      const url = new URL(raw);
+      // Block private/internal IPs (SSRF protection)
+      const host = url.hostname.toLowerCase();
+      if (
+        host === 'localhost' ||
+        host === '127.0.0.1' ||
+        host === '0.0.0.0' ||
+        host.startsWith('10.') ||
+        host.startsWith('172.') ||
+        host.startsWith('192.168.') ||
+        host.startsWith('169.254.') ||
+        host.endsWith('.local') ||
+        host.endsWith('.internal')
+      ) {
+        return null; // block internal URLs
+      }
+      // Only allow known NFT/IPFS hosts
+      if (!ALLOWED_HOSTS.has(host)) {
+        return null;
+      }
+    } catch {
+      return null;
+    }
+    return [raw];
+  }
 
   return null; // unrecognised scheme
 }
@@ -100,5 +137,5 @@ export async function GET(req: Request) {
   }
 
   console.error('[nft-metadata] all gateways failed', { rawUrl, errors });
-  return Response.json({ error: 'all gateways failed', details: errors }, { status: 502 });
+  return Response.json({ error: 'all gateways failed' }, { status: 502 });
 }
