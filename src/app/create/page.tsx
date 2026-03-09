@@ -24,7 +24,6 @@ import { TokenPicker } from '@/components/TokenPicker';
 import { TxProgress } from '@/components/TxProgress';
 import { useTxFlow } from '@/hooks/useTxFlow';
 import { saveCreateDraft, loadCreateDraft, clearCreateDraft } from '@/lib/createDraft';
-import { signApiCall } from '@/lib/signMessage';
 
 type Mode = 'op20' | 'op721';
 
@@ -318,20 +317,14 @@ function CreateOfferPage() {
   useEffect(() => {
     if (flow.state.phase !== 'create_confirmed') return;
     if (!flow.state.offerId || !requestIdRef.current || !address) return;
-    void signApiCall('fulfill', address, {
-      requestId: requestIdRef.current,
-      listingId: flow.state.offerId.toString(),
-    }).then(signed => {
-      fetch(`/api/requests/${requestIdRef.current}/fulfill`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          listingId:   flow.state.offerId!.toString(),
-          fulfilledBy: address,
-          ...signed,
-        }),
-      });
-    }).catch(err => console.warn('[fulfill] signing failed:', err));
+    fetch(`/api/requests/${requestIdRef.current}/fulfill`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        listingId:   flow.state.offerId!.toString(),
+        fulfilledBy: address,
+      }),
+    }).catch(err => console.warn('[fulfill]', err));
   }, [flow.state.phase, flow.state.offerId, address]);
 
   // ── Warn before unload when a tx has been broadcast ───────────────────────
@@ -355,19 +348,14 @@ function CreateOfferPage() {
 
       // Mark as hidden in DB if the creator checked "Hidden"
       if (hiddenListing && address) {
-        signApiCall('hide', address, { offerId: flow.state.offerId.toString() })
-          .then(signed => {
-            fetch('/api/hidden-listings', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                offerId: flow.state.offerId!.toString(),
-                creatorAddress: address,
-                ...signed,
-              }),
-            });
-          })
-          .catch(() => { /* best-effort */ });
+        fetch('/api/hidden-listings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            offerId: flow.state.offerId!.toString(),
+            creatorAddress: address,
+          }),
+        }).catch(() => { /* best-effort */ });
       }
 
       const t = setTimeout(

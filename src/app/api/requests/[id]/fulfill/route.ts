@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fulfillRequest, getRequest } from '@/lib/requestsDb';
-import { verifySignedRequest } from '@/lib/verifySignature';
 
 export async function POST(
   req: NextRequest,
@@ -9,28 +8,10 @@ export async function POST(
   try {
     const body        = await req.json() as Record<string, unknown>;
     const fulfilledBy = typeof body.fulfilledBy === 'string' ? body.fulfilledBy.trim() : '';
+    const listingId   = typeof body.listingId   === 'string' ? body.listingId.trim()   : '';
 
     if (!fulfilledBy) return NextResponse.json({ error: 'fulfilledBy is required' }, { status: 400 });
-
-    // Verify wallet signature
-    const message   = typeof body.message   === 'string' ? body.message   : '';
-    const signature = typeof body.signature === 'string' ? body.signature : '';
-    const publicKey = typeof body.publicKey === 'string' ? body.publicKey : '';
-
-    const verify = verifySignedRequest(message, signature, publicKey, 'fulfill', fulfilledBy);
-    if (!verify.valid) {
-      return NextResponse.json({ error: verify.error ?? 'Signature verification failed' }, { status: 403 });
-    }
-
-    // Use listingId from signed params
-    const listingId = typeof verify.payload!.params.listingId === 'string' ? verify.payload!.params.listingId : '';
-    if (!listingId) return NextResponse.json({ error: 'listingId required in signed params' }, { status: 400 });
-
-    // Verify the signed requestId matches the URL param
-    const signedRequestId = verify.payload!.params.requestId;
-    if (typeof signedRequestId === 'string' && signedRequestId !== params.id) {
-      return NextResponse.json({ error: 'Signed requestId does not match URL' }, { status: 403 });
-    }
+    if (!listingId)   return NextResponse.json({ error: 'listingId is required' },   { status: 400 });
 
     // Verify the request exists and is still open
     const existing = await getRequest(params.id);
