@@ -26,13 +26,18 @@ export interface VerifyResult {
   };
 }
 
+/** Standard Bitcoin bech32m HRPs (P2TR). OPNet P2OP uses op/opt/opr. */
+const P2TR_HRPS = new Set(['bc', 'tb', 'bcrt']);
+
 /**
  * Extract the 32-byte x-only public key from a P2TR (bech32m) address.
- * Returns null for non-P2TR addresses.
+ * Returns null for non-P2TR addresses (including P2OP / OPNet addresses).
  */
 function p2trToXOnlyPubkey(address: string): Buffer | null {
   try {
     const decoded = bech32m.decode(address);
+    // Only match standard Bitcoin P2TR, not OPNet P2OP (op1/opt1/opr1)
+    if (!P2TR_HRPS.has(decoded.prefix)) return null;
     // P2TR witness version = 1, data = 32 bytes
     const words = decoded.words;
     if (words[0] !== 1) return null;
