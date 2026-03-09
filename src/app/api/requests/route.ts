@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { listRequests, getRequest, createRequest } from '@/lib/requestsDb';
+import { verifySignedRequest } from '@/lib/verifySignature';
 
 // ── GET /api/requests ─────────────────────────────────────────────────────────
 // Query params: status, assetType, q, id
@@ -38,6 +39,17 @@ export async function POST(req: NextRequest) {
     const btcSatsRaw       = typeof body.btcSats          === 'string' ? body.btcSats          : '';
 
     if (!requesterAddress) return NextResponse.json({ error: 'requesterAddress is required' }, { status: 400 });
+
+    // Verify wallet signature
+    const msgStr    = typeof body.message   === 'string' ? body.message   : '';
+    const signature = typeof body.signature === 'string' ? body.signature : '';
+    const publicKey = typeof body.publicKey === 'string' ? body.publicKey : '';
+
+    const verify = verifySignedRequest(msgStr, signature, publicKey, 'createRequest', requesterAddress);
+    if (!verify.valid) {
+      return NextResponse.json({ error: verify.error ?? 'Signature verification failed' }, { status: 403 });
+    }
+
     if (!contractAddress)  return NextResponse.json({ error: 'contractAddress is required' },  { status: 400 });
     if (assetType !== 'op20' && assetType !== 'op721') {
       return NextResponse.json({ error: 'assetType must be op20 or op721' }, { status: 400 });

@@ -3,12 +3,13 @@
  *
  * Verifies that:
  *   1. The signature is a valid Schnorr signature for the message
- *   2. The signing public key derives the claimed P2TR address
+ *   2. The signing public key derives the claimed address (P2TR or P2OP)
  *   3. The timestamp is within the allowed window (prevents replay)
+ *   4. The signed params match the actual request parameters
  */
 
 import { MessageSigner } from '@btc-vision/transaction';
-import { toXOnly } from '@btc-vision/bitcoin';
+import { hash160, toXOnly } from '@btc-vision/bitcoin';
 import { bech32m } from 'bech32';
 
 /** Maximum age of a signed message before the server rejects it (5 minutes). */
@@ -26,19 +27,23 @@ export interface VerifyResult {
   };
 }
 
-/** Standard Bitcoin bech32m HRPs (P2TR). OPNet P2OP uses op/opt/opr. */
+/** Standard Bitcoin bech32m HRPs (P2TR). */
 const P2TR_HRPS = new Set(['bc', 'tb', 'bcrt']);
+
+/** OPNet bech32m HRPs (P2OP). */
+const P2OP_HRPS = new Set(['op', 'opt', 'opr']);
+
+/** P2OP witness version is 16. */
+const P2OP_WITNESS_VERSION = 16;
 
 /**
  * Extract the 32-byte x-only public key from a P2TR (bech32m) address.
- * Returns null for non-P2TR addresses (including P2OP / OPNet addresses).
+ * Returns null for non-P2TR addresses.
  */
 function p2trToXOnlyPubkey(address: string): Buffer | null {
   try {
     const decoded = bech32m.decode(address);
-    // Only match standard Bitcoin P2TR, not OPNet P2OP (op1/opt1/opr1)
     if (!P2TR_HRPS.has(decoded.prefix)) return null;
-    // P2TR witness version = 1, data = 32 bytes
     const words = decoded.words;
     if (words[0] !== 1) return null;
     const data = Buffer.from(bech32m.fromWords(words.slice(1)));
@@ -50,11 +55,63 @@ function p2trToXOnlyPubkey(address: string): Buffer | null {
 }
 
 /**
+ * Extract the 20-byte hash160 from a P2OP (OPNet bech32m) address.
+ * P2OP witness program = [deploymentVersion(1 byte), hash160(20 bytes)]
+ * Returns null for non-P2OP addresses.
+ */
+function p2opToHash160(address: string): Buffer | null {
+  try {
+    const decoded = bech32m.decode(address, 90);
+    if (!P2OP_HRPS.has(decoded.prefix)) return null;
+    const words = decoded.words;
+    if (words[0] !== P2OP_WITNESS_VERSION) return null;
+    const data = Buffer.from(bech32m.fromWords(words.slice(1)));
+    // 21 bytes = 1 byte deployment version + 20 bytes hash160
+    if (data.length !== 21) return null;
+    return data.subarray(1); // skip deployment version, return 20-byte hash160
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Verify that a public key corresponds to the expected address.
+ * Supports P2TR (x-only match) and P2OP (hash160 match).
+ */
+function verifyPubkeyMatchesAddress(
+  pubKeyBytes: Uint8Array,
+  expectedAddress: string,
+): string | null {
+  // P2TR: address encodes x-only pubkey directly
+  const addressXOnly = p2trToXOnlyPubkey(expectedAddress);
+  if (addressXOnly) {
+    const signerXOnly = toXOnly(Buffer.from(pubKeyBytes));
+    if (!addressXOnly.equals(signerXOnly)) {
+      return 'Public key does not match the claimed P2TR address';
+    }
+    return null; // match
+  }
+
+  // P2OP: address encodes hash160(publicKey)
+  const addressHash = p2opToHash160(expectedAddress);
+  if (addressHash) {
+    const pubKeyHash = hash160(Buffer.from(pubKeyBytes));
+    if (!addressHash.equals(pubKeyHash)) {
+      return 'Public key does not match the claimed P2OP address';
+    }
+    return null; // match
+  }
+
+  // Unknown address type — reject (don't silently skip)
+  return 'Unsupported address type for public key verification';
+}
+
+/**
  * Verify a signed API call.
  *
  * @param message    - The original JSON string that was signed
  * @param signature  - Hex-encoded 64-byte Schnorr signature
- * @param publicKey  - Hex-encoded public key of the signer (33-byte compressed or 32-byte x-only)
+ * @param publicKey  - Hex-encoded public key of the signer
  * @param expectedAction  - The expected action field (e.g. 'fill', 'cancel')
  * @param expectedAddress - The wallet address that should match the signer
  */
@@ -101,7 +158,13 @@ export function verifySignedRequest(
   let pubKeyBytes: Uint8Array;
   try {
     const sigBytes = Buffer.from(signature, 'hex');
+    if (sigBytes.length !== 64) {
+      return { valid: false, error: 'Signature must be 64 bytes' };
+    }
     pubKeyBytes = Buffer.from(publicKey, 'hex');
+    if (pubKeyBytes.length !== 33 && pubKeyBytes.length !== 32) {
+      return { valid: false, error: 'Public key must be 32 or 33 bytes' };
+    }
 
     const isValid = MessageSigner.verifySignature(pubKeyBytes, message, sigBytes);
     if (!isValid) {
@@ -111,17 +174,11 @@ export function verifySignedRequest(
     return { valid: false, error: `Signature verification failed: ${err}` };
   }
 
-  // 6. Verify the public key matches the claimed P2TR address.
-  //    For P2TR, the address encodes the 32-byte x-only pubkey directly.
-  const addressXOnly = p2trToXOnlyPubkey(expectedAddress);
-  if (addressXOnly) {
-    const signerXOnly = toXOnly(Buffer.from(pubKeyBytes));
-    if (!addressXOnly.equals(signerXOnly)) {
-      return { valid: false, error: 'Public key does not match the claimed address' };
-    }
+  // 6. Verify the public key matches the claimed address (P2TR or P2OP)
+  const bindingError = verifyPubkeyMatchesAddress(pubKeyBytes, expectedAddress);
+  if (bindingError) {
+    return { valid: false, error: bindingError };
   }
-  // For non-P2TR addresses we skip this check — the Schnorr signature
-  // itself already proves ownership of the private key.
 
   return { valid: true, payload };
 }

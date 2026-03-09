@@ -10,7 +10,7 @@
  *   - action: identifies the API endpoint
  *   - address: the caller's wallet address
  *   - timestamp: unix ms (server rejects if too old)
- *   - params: arbitrary action-specific data
+ *   - params: arbitrary action-specific data (bound to the signature)
  */
 
 import { MessageSigner } from '@btc-vision/transaction';
@@ -27,6 +27,8 @@ export interface SignedPayload {
 /**
  * Build a structured message, sign it with the wallet, and return
  * the message + signature + publicKey as hex strings for the API.
+ *
+ * @throws Error if the wallet cannot provide a public key
  */
 export async function signApiCall(
   action: string,
@@ -52,8 +54,12 @@ export async function signApiCall(
       const pk = await window.opnet.getPublicKey();
       publicKey = typeof pk === 'string' ? pk : Buffer.from(pk).toString('hex');
     } catch {
-      // Fallback: some wallet versions may not support getPublicKey
+      // will be caught below
     }
+  }
+
+  if (!publicKey) {
+    throw new Error('Wallet did not provide a public key. Please reconnect your wallet.');
   }
 
   return {

@@ -24,6 +24,12 @@ export async function POST(
       return NextResponse.json({ error: verify.error ?? 'Signature verification failed' }, { status: 403 });
     }
 
+    // Verify the signed requestId matches the URL param
+    const signedRequestId = verify.payload!.params.requestId;
+    if (typeof signedRequestId === 'string' && signedRequestId !== params.id) {
+      return NextResponse.json({ error: 'Signed requestId does not match URL' }, { status: 403 });
+    }
+
     // Verify the caller's address matches the stored requester
     const existing = await getRequest(params.id);
     if (!existing) {

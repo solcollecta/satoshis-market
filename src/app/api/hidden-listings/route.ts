@@ -13,15 +13,14 @@ export async function GET() {
   }
 }
 
-/** POST — mark an offer as hidden. Body: { offerId, creatorAddress, message, signature, publicKey } */
+/** POST — mark an offer as hidden. Requires wallet signature. */
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json() as Record<string, unknown>;
-    const offerId        = typeof body.offerId        === 'string' ? body.offerId.trim()        : '';
     const creatorAddress = typeof body.creatorAddress === 'string' ? body.creatorAddress.trim() : '';
 
-    if (!offerId || !creatorAddress) {
-      return NextResponse.json({ error: 'offerId and creatorAddress are required' }, { status: 400 });
+    if (!creatorAddress) {
+      return NextResponse.json({ error: 'creatorAddress is required' }, { status: 400 });
     }
 
     // Verify wallet signature
@@ -32,6 +31,12 @@ export async function POST(req: NextRequest) {
     const verify = verifySignedRequest(message, signature, publicKey, 'hide', creatorAddress);
     if (!verify.valid) {
       return NextResponse.json({ error: verify.error ?? 'Signature verification failed' }, { status: 403 });
+    }
+
+    // Use offerId from signed params
+    const offerId = typeof verify.payload!.params.offerId === 'string' ? verify.payload!.params.offerId : '';
+    if (!offerId) {
+      return NextResponse.json({ error: 'offerId required in signed params' }, { status: 400 });
     }
 
     await markHidden(offerId, creatorAddress);

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useWallet } from '@/context/WalletContext';
 import { fetchTokenInfo } from '@/lib/opnet';
 import { parseBtcToSats, parseUnits } from '@/lib/tokens';
+import { signApiCall } from '@/lib/signMessage';
 
 type Mode     = 'op20' | 'op721';
 type NftScope = 'specific' | 'any';
@@ -82,10 +83,15 @@ export default function RequestCreatePage() {
         body.tokenId = tokenId.trim();
       }
 
+      const signed = await signApiCall('createRequest', address!, {
+        contractAddress: tokenAddress,
+        assetType: mode,
+      });
+
       const res  = await fetch('/api/requests', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(body),
+        body:    JSON.stringify({ ...body, ...signed }),
       });
       const data = await res.json() as { id?: string; error?: string };
       if (!res.ok) throw new Error(data.error ?? 'Failed to post request');

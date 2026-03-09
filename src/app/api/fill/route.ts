@@ -17,14 +17,9 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json() as Record<string, unknown>;
-    const listingId = typeof body.listingId === 'string' ? body.listingId.trim()
-                    : typeof body.listingId === 'number' ? String(body.listingId) : '';
-    const txid      = typeof body.txid      === 'string' ? body.txid.trim()      : '';
     const seller    = typeof body.seller    === 'string' ? body.seller.trim()    : '';
 
-    if (!listingId) return NextResponse.json({ error: 'listingId required' }, { status: 400 });
-    if (!txid)      return NextResponse.json({ error: 'txid required' },      { status: 400 });
-    if (!seller)    return NextResponse.json({ error: 'seller required' },     { status: 400 });
+    if (!seller) return NextResponse.json({ error: 'seller required' }, { status: 400 });
 
     // Verify wallet signature
     const message   = typeof body.message   === 'string' ? body.message   : '';
@@ -35,6 +30,13 @@ export async function POST(req: NextRequest) {
     if (!verify.valid) {
       return NextResponse.json({ error: verify.error ?? 'Signature verification failed' }, { status: 403 });
     }
+
+    // Use params from the signed message (not unsigned body fields)
+    const listingId = typeof verify.payload!.params.listingId === 'string' ? verify.payload!.params.listingId : '';
+    const txid      = typeof verify.payload!.params.txid      === 'string' ? verify.payload!.params.txid      : '';
+
+    if (!listingId) return NextResponse.json({ error: 'listingId required in signed params' }, { status: 400 });
+    if (!txid)      return NextResponse.json({ error: 'txid required in signed params' },      { status: 400 });
 
     await saveFillTxid(listingId, txid, seller);
     return NextResponse.json({ ok: true });
