@@ -21,22 +21,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { checkTxConfirmed, getOffer } from '@/lib/opnet';
 import { addPendingTx, removePendingTx } from '@/lib/pendingTxs';
-import { signApiCall } from '@/lib/signMessage';
 
 /** Fire-and-forget: save fill txid + seller to DB so all viewers can see it. */
 function saveFillTxid(listingId: string, txid: string, seller: string) {
-  signApiCall('fill', seller, { listingId, txid })
-    .then(signed => {
-      fetch('/api/fill', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ listingId, txid, seller, ...signed }),
-      }).catch(err => console.warn('[saveFillTxid]', err));
-    })
-    .catch(err => {
-      // Fallback: send without signature (server will reject, but log it)
-      console.warn('[saveFillTxid] signing failed, sending unsigned:', err);
-    });
+  fetch('/api/fill', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ listingId, txid, seller }),
+  }).catch(err => console.warn('[saveFillTxid]', err));
 }
 
 export type FillPhase = 'idle' | 'simulating' | 'pending' | 'confirmed' | 'failed';
